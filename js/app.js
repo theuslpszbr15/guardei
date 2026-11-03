@@ -5,6 +5,7 @@ import { conversar, modeloObsoleto, ultimoModelo } from './gemini.js';
 import { iconeCategoria } from './icons.js';
 import { extrairUrl, nomePlataforma, normalizarUrl, plataformaDe, tipoDe } from './link.js';
 import { criarFila } from './pipeline.js';
+import { qrSvg } from './qr.js';
 import { buscar } from './search.js';
 import { botao, confirmar, copiar, dia, folha, h, ic, menu, toast } from './ui.js';
 
@@ -22,6 +23,7 @@ const est = {
   carregado: false,
   vista: null,
   chat: [],
+  sync: { pendentes: 0, doCache: true },
 };
 const ia = () => (est.ajustes.geminiKey ? { chave: est.ajustes.geminiKey, modelo: est.ajustes.modelo || GEMINI_MODELO_PADRAO } : null);
 
@@ -112,6 +114,7 @@ function montarCasca() {
       h('nav', { class: 'nav', 'aria-label': 'Principal' }, NAV.map((n) => navLink(n))),
       h('div', { class: 'lateral-pe' },
         h('a', { href: '#/ajustes/ia', class: 'nav-item' }, ic('tomada'), h('span', {}, 'Conectar sua IA')),
+        h('button', { type: 'button', class: 'nav-item', onclick: folhaInstalar }, ic('baixar'), h('span', {}, 'Instalar no celular')),
         h('a', { href: '#/ajustes', class: 'nav-item conta', dataset: { rota: 'ajustes' } },
           h('span', { class: 'avatar', 'aria-hidden': 'true' }, nome.slice(0, 1).toUpperCase()),
           h('span', { class: 'conta-txt' }, h('strong', {}, nome), h('small', {}, usuarioDe(est.user.email)))))),
@@ -655,12 +658,20 @@ function vistaAjustes(secao) {
 
   const secaoEl = (id, titulo, ...filhos) => h('section', { class: 'ajuste', id: `aj-${id}` }, h('h2', {}, titulo), ...filhos);
   const linha = (rotulo, ...fim) => h('div', { class: 'grupo-linha' }, h('span', {}, rotulo), h('span', { class: 'fim' }, ...fim));
+  const sincronia = h('p', { class: 'pequeno sync' });
+  const desenharSync = () => {
+    const { pendentes, doCache } = est.sync;
+    sincronia.className = `pequeno sync ${pendentes ? 'pendente' : doCache ? '' : 'ok'}`;
+    sincronia.textContent = pendentes ? `${pendentes} alteração(ões) esperando internet para ir à nuvem`
+      : doCache ? 'Conectando à nuvem…' : 'Sincronizado com a nuvem';
+  };
+  desenharSync();
   principal.replaceChildren(
     topoCelular(h('a', { href: '#/salvos', class: 'btn-redondo', 'aria-label': 'Voltar' }, ic('voltar'))),
     h('header', { class: 'topo' }, h('h1', {}, 'Ajustes')),
     h('div', { class: 'ajustes' },
       h('div', { class: 'perfil' }, h('span', { class: 'avatar grande', 'aria-hidden': 'true' }, nome.slice(0, 1).toUpperCase()),
-        h('div', {}, h('strong', {}, nome), h('p', { class: 'mudo pequeno' }, `${usuarioDe(est.user.email)} · ${est.salvos.length} salvos · ${est.pastas.length} pastas`))),
+        h('div', {}, h('strong', {}, nome), h('p', { class: 'mudo pequeno' }, `Conta: ${usuarioDe(est.user.email)} · ${est.salvos.length} salvos · ${est.pastas.length} pastas`), sincronia)),
       secaoEl('gemini', 'IA (Google Gemini)',
         h('div', { class: 'grupo' }, h('label', { class: 'grupo-linha' }, chaveIn), h('label', { class: 'grupo-linha' }, modeloIn),
           h('datalist', { id: 'modelos' }, GEMINI_MODELOS.map((m) => h('option', { value: m })))),
@@ -671,7 +682,8 @@ function vistaAjustes(secao) {
         comErro.length ? botao(`Ler de novo ${comErro.length} com problema`, { icone: 'recarregar', classe: 'btn-sec', onclick: () => comErro.forEach((s) => nuvem.atualizarSalvo(uid, s.id, { status: 'pendente', erro: '', avisoIa: '' })) }) : null),
       secaoEl('onde', 'Guardar de qualquer lugar',
         h('div', { class: 'grupo' },
-          h('div', { class: 'grupo-linha passo' }, ic('baixar', 'azul'), h('div', {}, h('strong', {}, 'Android'), h('p', { class: 'mudo pequeno' }, 'Instale este app (menu do Chrome › Instalar app). Depois, em qualquer post: Compartilhar › Guardei.')), instalarBtn()),
+          h('div', { class: 'grupo-linha passo' }, ic('baixar', 'azul'), h('div', {}, h('strong', {}, 'Android'), h('p', { class: 'mudo pequeno' }, 'Instale este app (menu do Chrome › Instalar app). Depois, em qualquer post: Compartilhar › Guardei.')),
+            matchMedia('(pointer: coarse)').matches ? instalarBtn() : botao('QR code', { classe: 'btn-sec btn-peq', onclick: folhaInstalar })),
           h('div', { class: 'grupo-linha passo' }, ic('compartilhar', 'azul'), h('div', {}, h('strong', {}, 'iPhone'), h('p', { class: 'mudo pequeno' }, 'Safari › Compartilhar › Adicionar à Tela de Início. Para guardar: copie o link do post e toque em + › Colar.'))),
           h('div', { class: 'grupo-linha passo' }, ic('web', 'azul'), h('div', {}, h('strong', {}, 'Extensão do Chrome'), h('p', { class: 'mudo pequeno' }, 'Botão Guardei nos posts do Instagram, X, TikTok, YouTube e LinkedIn. chrome://extensions › Modo do desenvolvedor › Carregar sem compactação › pasta extension.'))),
           h('div', { class: 'grupo-linha passo' }, ic('marca', 'azul'), h('div', {}, h('strong', {}, 'Favorito “Guardar”'), h('p', { class: 'mudo pequeno' }, 'Arraste o botão para a barra de favoritos e clique em qualquer página.')),
@@ -683,7 +695,21 @@ function vistaAjustes(secao) {
       secaoEl('tema', 'Aparência', h('div', { class: 'grupo' }, linha('Tema', tema))),
       h('div', { class: 'grupo' }, h('button', { type: 'button', class: 'grupo-linha perigo', onclick: async () => { await nuvem.sair(); location.reload(); } }, ic('sair'), h('span', {}, 'Sair')))));
   if (secao) document.getElementById(`aj-${secao}`)?.scrollIntoView({ block: 'start' });
-  est.vista = { atualizar: () => {} };
+  est.vista = { atualizar: desenharSync };
+}
+
+// QR code com o endereço do app para abrir e instalar no celular.
+function folhaInstalar() {
+  const url = location.origin + location.pathname;
+  folha('Instalar no celular', () => h('div', { class: 'folha-corpo instalar' },
+    h('div', { class: 'qr' }, qrSvg(url, 220)),
+    h('ol', { class: 'passos-qr' },
+      h('li', {}, 'Aponte a câmera do celular para o código e abra o link.'),
+      h('li', {}, 'Entre com a mesma conta: ', h('strong', {}, usuarioDe(est.user?.email || ''))),
+      h('li', {}, 'Android (Chrome): menu ⋮ › ', h('strong', {}, 'Instalar app'), '. Depois, em qualquer post, Compartilhar › Guardei.'),
+      h('li', {}, 'iPhone (Safari): Compartilhar › ', h('strong', {}, 'Adicionar à Tela de Início'), '.')),
+    h('div', { class: 'acoes' }, botao('Copiar link', { icone: 'link', classe: 'btn-sec', onclick: () => copiar(url, 'Link copiado') }))),
+  { subtitulo: 'Escaneie com a câmera do celular' });
 }
 
 let pedidoInstalar = null;
@@ -709,7 +735,8 @@ async function iniciar(user) {
     if (est.carregado && /^#\/(ajustes|chat|pastas)/.test(location.hash) && !principal.contains(document.activeElement)) rotear();
   });
   nuvem.ouvirPastas(user.uid, (p) => { est.pastas = p; if (est.carregado) atualizar(); });
-  nuvem.ouvirSalvos(user.uid, (s) => {
+  nuvem.ouvirSalvos(user.uid, (s, sync) => {
+    est.sync = sync;
     est.salvos = s;
     est.carregado = true;
     fila(s);
@@ -728,7 +755,15 @@ async function iniciar(user) {
   rotear();
 }
 
-if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js');
+// Versão nova publicada: o service worker novo assume e a página recarrega uma vez sozinha.
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  const tinhaControle = !!navigator.serviceWorker.controller;
+  let recarregou = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (tinhaControle && !recarregou) { recarregou = true; location.reload(); }
+  });
+  navigator.serviceWorker.register('./sw.js').then((r) => r.update()).catch(() => {});
+}
 
 const user = await nuvem.sessaoAtual();
 if (user) iniciar(user);

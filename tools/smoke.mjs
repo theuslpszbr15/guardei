@@ -105,7 +105,13 @@ try {
   await esperarTexto(p, 'Salvo. Vale para todos');
   await clicarTexto(p, '#aj-gemini button', 'Testar');
   await esperarTexto(p, 'Funcionou com');
-  passo('salva e testa a chave da IA');
+  await esperarTexto(p, 'Sincronizado com a nuvem');
+  await clicarTexto(p, '#aj-onde button', 'QR code');
+  await p.waitForSelector('.folha .qr svg path');
+  await foto(p, '01b-qr-instalar');
+  await p.keyboard.press('Escape');
+  await p.waitForFunction(() => !document.querySelector('.folha-fundo'));
+  passo('salva e testa a chave da IA, mostra sincronia e QR code');
 
   // 3. Adicionar links
   await p.goto(`${BASE}#/salvos`);

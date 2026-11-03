@@ -55,8 +55,12 @@ const pastasCol = (uid) => collection(base(uid), 'folders');
 
 const comId = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
+// Também avisa quantas alterações ainda não chegaram ao servidor (ex.: sem internet).
 export function ouvirSalvos(uid, cb) {
-  return onSnapshot(salvosCol(uid), (snap) => cb(comId(snap).sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0))));
+  return onSnapshot(salvosCol(uid), { includeMetadataChanges: true }, (snap) => cb(
+    comId(snap).sort((a, b) => (b.criadoEm || 0) - (a.criadoEm || 0)),
+    { pendentes: snap.docs.filter((d) => d.metadata.hasPendingWrites).length, doCache: snap.metadata.fromCache },
+  ));
 }
 
 export function ouvirPastas(uid, cb) {
