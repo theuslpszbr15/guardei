@@ -52,37 +52,57 @@ function telaLogin() {
   const erro = h('p', { class: 'erro', role: 'alert' });
   const nome = h('input', { name: 'nome', autocomplete: 'name', placeholder: 'Seu nome', 'aria-label': 'Nome' });
   const linhaNome = h('label', { class: 'grupo-linha', hidden: true }, nome);
-  const usuario = h('input', { name: 'usuario', autocomplete: 'username', required: true, placeholder: 'Usuário', 'aria-label': 'Usuário', autocapitalize: 'none' });
+  const email = h('input', { name: 'email', type: 'email', inputmode: 'email', autocomplete: 'email', required: true, placeholder: 'E-mail', 'aria-label': 'E-mail', autocapitalize: 'none', spellcheck: 'false' });
   const senha = h('input', { name: 'senha', type: 'password', autocomplete: 'current-password', required: true, minlength: 6, placeholder: 'Senha', 'aria-label': 'Senha' });
   const enviar = h('button', { type: 'submit', class: 'btn btn-pri btn-largo' }, 'Entrar');
   const alternar = h('button', { type: 'button', class: 'btn-link' }, 'Criar conta');
+  const dica = h('span', {}, 'Ainda não tem conta? ');
+  const modo = (criar) => {
+    criando = criar;
+    linhaNome.hidden = !criar;
+    enviar.textContent = criar ? 'Criar conta' : 'Entrar';
+    alternar.textContent = criar ? 'Entrar' : 'Criar conta';
+    dica.textContent = criar ? 'Já tem conta? ' : 'Ainda não tem conta? ';
+    senha.autocomplete = criar ? 'new-password' : 'current-password';
+  };
   alternar.onclick = () => {
-    criando = !criando;
-    linhaNome.hidden = !criando;
-    enviar.textContent = criando ? 'Criar conta' : 'Entrar';
-    alternar.textContent = criando ? 'Já tenho conta' : 'Criar conta';
-    senha.autocomplete = criando ? 'new-password' : 'current-password';
+    erro.textContent = '';
+    modo(!criando);
   };
   const form = h('form', { class: 'login-form', novalidate: true },
-    h('div', { class: 'grupo' }, linhaNome, h('label', { class: 'grupo-linha' }, usuario), h('label', { class: 'grupo-linha' }, senha)),
+    h('div', { class: 'grupo' }, linhaNome, h('label', { class: 'grupo-linha' }, email), h('label', { class: 'grupo-linha' }, senha)),
     erro, enviar,
-    h('p', { class: 'mudo pequeno centro' }, 'A mesma conta do Controle Pessoal funciona aqui. ', alternar));
+    h('p', { class: 'mudo pequeno centro' }, dica, alternar));
   form.onsubmit = async (e) => {
     e.preventDefault();
     erro.textContent = '';
-    if (!usuario.value.trim() || senha.value.length < 6) {
-      erro.textContent = 'Preencha o usuário e uma senha de pelo menos 6 caracteres.';
+    const valor = email.value.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(valor)) {
+      erro.textContent = 'Digite o e-mail completo da sua conta (ex.: voce@gmail.com).';
+      email.focus();
+      return;
+    }
+    if (senha.value.length < 6) {
+      erro.textContent = 'A senha precisa ter pelo menos 6 caracteres.';
       return;
     }
     enviar.disabled = true;
     try {
-      const user = criando ? await nuvem.cadastrar(usuario.value, senha.value, nome.value.trim()) : await nuvem.entrar(usuario.value, senha.value);
+      const user = criando ? await nuvem.cadastrar(valor, senha.value, nome.value.trim()) : await nuvem.entrar(valor, senha.value);
       iniciar(user);
     } catch (err) {
       const c = err.code || '';
-      erro.textContent = c.includes('invalid-credential') || c.includes('wrong-password') || c.includes('user-not-found') ? 'Usuário ou senha incorretos.'
-        : c.includes('email-already') ? 'Esse usuário já existe.'
-          : c.includes('network') ? 'Sem conexão com a internet.' : 'Não deu para entrar agora. Tente de novo.';
+      if (c.includes('email-already')) {
+        modo(false);
+        erro.textContent = `Já existe uma conta com ${valor}. Digite a senha dela para entrar.`;
+      } else if (c.includes('invalid-credential') || c.includes('wrong-password') || c.includes('user-not-found')) {
+        erro.textContent = `Não achamos uma conta com ${valor} e essa senha. Confira o e-mail e a senha, ou toque em Criar conta.`;
+      } else {
+        erro.textContent = c.includes('invalid-email') ? 'Esse e-mail não é válido.'
+          : c.includes('weak-password') ? 'Senha fraca: use pelo menos 6 caracteres.'
+            : c.includes('too-many-requests') ? 'Muitas tentativas. Espere um pouco e tente de novo.'
+              : c.includes('network') ? 'Sem conexão com a internet.' : 'Não deu para entrar agora. Tente de novo.';
+      }
     } finally {
       enviar.disabled = false;
     }

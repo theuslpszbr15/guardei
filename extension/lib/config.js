@@ -24,4 +24,6 @@ export const CATEGORIAS = [
   'Livro', 'Moda', 'Beleza', 'Casa e decoração', 'Tecnologia', 'Finanças', 'Humor', 'Carreira e estudos', 'Outro',
 ];
 
-export const GEMINI_MODELO_PADRAO = 'gemini-2.5-flash';
+// Em ordem de preferência; o app tenta o próximo se o Google tirar algum do ar.
+export const GEMINI_MODELOS = ['gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
+export const GEMINI_MODELO_PADRAO = GEMINI_MODELOS[0];

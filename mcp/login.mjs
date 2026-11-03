@@ -6,7 +6,7 @@ import { login } from '../js/firestore-rest.js';
 import { ARQUIVO, gravarSessao } from './sessao.mjs';
 
 const rl = createInterface({ input: stdin, output: stdout });
-const usuario = (await rl.question('Usuário do Guardei: ')).trim();
+const usuario = (await rl.question('E-mail da sua conta do Guardei: ')).trim();
 rl.close();
 
 // Esconde a senha enquanto digita.

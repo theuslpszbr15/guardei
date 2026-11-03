@@ -16,7 +16,7 @@ try {
   await p.setViewport({ width: 1280, height: 800 });
   await p.goto(URL_APP, { waitUntil: 'networkidle0' });
   await p.evaluate(() => [...document.querySelectorAll('button')].find((b) => b.textContent === 'Criar conta').click());
-  await p.type('input[name=usuario]', USUARIO);
+  await p.type('input[name=email]', emailDe(USUARIO));
   await p.type('input[name=senha]', SENHA);
   await p.click('.login-form button[type=submit]');
   await p.waitForFunction(() => document.body.innerText.includes('Nada guardado ainda'), { timeout: 20000 });

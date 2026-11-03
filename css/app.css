@@ -110,6 +110,7 @@ img { display: block; }
   position: relative; font-size: 16px; text-decoration: none; color: var(--txt);
 }
 .grupo-linha + .grupo-linha::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: .5px solid var(--linha); }
+.grupo-linha[hidden] + .grupo-linha::before { content: none; }
 .grupo-linha input, .grupo-linha select { flex: 1; min-width: 0; height: 46px; border: 0; background: none; outline: none; font-size: 16px; }
 .grupo-linha .fim { margin-left: auto; color: var(--mudo); display: flex; align-items: center; gap: 6px; }
 .grupo-linha .fim select { text-align: right; color: var(--mudo); cursor: pointer; }

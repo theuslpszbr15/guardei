@@ -110,7 +110,7 @@ try {
   await foto(p, '01-login');
   await clicarTexto(p, 'button', 'Criar conta');
   await p.type('input[name=nome]', 'Smoke Teste');
-  await p.type('input[name=usuario]', USUARIO);
+  await p.type('input[name=email]', emailDe(USUARIO));
   await p.type('input[name=senha]', SENHA);
   await p.click('.login-form button[type=submit]');
   await esperarTexto(p, 'Nada guardado ainda');
@@ -274,13 +274,25 @@ try {
   o.on('request', responder);
   await o.goto(BASE, { waitUntil: 'networkidle0' });
   await o.waitForSelector('.login-form');
-  await o.type('input[name=usuario]', USUARIO);
-  await o.type('input[name=senha]', SENHA);
-  await o.click('.login-form button[type=submit]');
+  const tentar = async (email, senha) => {
+    await o.$eval('input[name=email]', (i) => { i.value = ''; });
+    await o.$eval('input[name=senha]', (i) => { i.value = ''; });
+    await o.type('input[name=email]', email);
+    await o.type('input[name=senha]', senha);
+    await o.click('.login-form button[type=submit]');
+  };
+  await tentar(USUARIO, SENHA);
+  await esperarTexto(o, 'Digite o e-mail completo');
+  await tentar(emailDe(USUARIO), 'senha-errada');
+  await esperarTexto(o, 'Não achamos uma conta com');
+  await clicarTexto(o, '.login-form button', 'Criar conta');
+  await tentar(emailDe(USUARIO), SENHA);
+  await esperarTexto(o, 'Já existe uma conta com');
+  await tentar(emailDe(USUARIO), SENHA);
   await o.waitForFunction(() => document.querySelectorAll('.card a').length === 4, { timeout: 25000 });
   assert(!(await o.evaluate(() => document.body.innerText.includes('Nada guardado'))), 'aparelho novo não deveria dizer que está vazio');
   await outro.close();
-  passo('outro aparelho (aba anônima) vê os mesmos 4 salvos da conta');
+  passo('login pede e-mail completo, avisa conta inexistente/já existente e outro aparelho vê os mesmos 4 salvos');
 
   // 14. Celular
   const m = await novaPagina(390, 844, true);

@@ -108,7 +108,7 @@ chrome.runtime.onMessage.addListener((msg, _remetente, responder) => {
         mapa = { t: 0, urls: new Map() };
         return { ok: true };
       } catch (e) {
-        return { ok: false, erro: /INVALID|NOT_FOUND|PASSWORD/.test(e.message) ? 'Usuário ou senha incorretos.' : e.message };
+        return { ok: false, erro: /INVALID|NOT_FOUND|PASSWORD/.test(e.message) ? 'E-mail ou senha incorretos. Use o e-mail completo da sua conta.' : e.message };
       }
     },
     sair: async () => {
