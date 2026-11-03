@@ -1,0 +1,27 @@
+{
+  "name": "Guardei",
+  "short_name": "Guardei",
+  "description": "Guarde posts, vídeos e links de qualquer lugar e ache tudo depois.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f2f2f2",
+  "theme_color": "#f2f2f2",
+  "lang": "pt-BR",
+  "categories": ["productivity"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "share_target": {
+    "action": "./",
+    "method": "GET",
+    "params": { "title": "share_title", "text": "share_text", "url": "share_url" }
+  },
+  "shortcuts": [
+    { "name": "Buscar", "url": "./#/buscar" },
+    { "name": "Chat", "url": "./#/chat" }
+  ]
+}

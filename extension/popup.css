@@ -1,0 +1,13 @@
+:root { color-scheme: light dark; --acento: #208aef; --linha: light-dark(#e4e2dc, #2b2b30); --mudo: light-dark(#6d6b66, #9c9a96); --bg: light-dark(#fff, #19191c); }
+body { width: 300px; margin: 0; padding: 16px; font: 14px/1.45 "Segoe UI", system-ui, sans-serif; background: var(--bg); }
+header { display: flex; gap: 8px; align-items: center; font-size: 16px; margin-bottom: 12px; }
+form, section { display: grid; gap: 10px; }
+input { height: 38px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--linha); background: transparent; font: inherit; color: inherit; }
+button { height: 38px; border-radius: 999px; border: 1px solid var(--linha); background: transparent; font: 600 14px "Segoe UI", system-ui, sans-serif; color: inherit; cursor: pointer; }
+button.pri { background: var(--acento); border-color: var(--acento); color: #fff; }
+button:disabled { opacity: .5; }
+a { color: var(--acento); font-weight: 600; text-decoration: none; }
+p { margin: 0; }
+.mudo { color: var(--mudo); }
+.pequeno { font-size: 12px; }
+.erro { color: #c2321b; min-height: 1em; }

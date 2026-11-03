@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Guardei</title>
+  <link rel="stylesheet" href="popup.css">
+  <script type="module" src="popup.js"></script>
+</head>
+<body>
+  <header><img src="icons/icon-32.png" alt="" width="22" height="22"><strong>Guardei</strong></header>
+  <form id="login" hidden>
+    <p class="mudo">Entre com a mesma conta do app.</p>
+    <input id="usuario" placeholder="Usuário" autocomplete="username" required>
+    <input id="senha" type="password" placeholder="Senha" autocomplete="current-password" required>
+    <p id="erro" class="erro" role="alert"></p>
+    <button class="pri" type="submit">Entrar</button>
+  </form>
+  <section id="logado" hidden>
+    <p id="quem" class="mudo"></p>
+    <button id="guardar" class="pri" type="button">Guardar esta página</button>
+    <p id="resultado" class="mudo" role="status"></p>
+    <a id="abrir" target="_blank" rel="noopener">Abrir o Guardei</a>
+    <p class="mudo pequeno">Nos posts do Instagram, X, TikTok, YouTube e LinkedIn aparece um botão Guardei ao lado do compartilhar. Atalho: Alt+Shift+S.</p>
+    <button id="sair" type="button" class="sec">Sair</button>
+  </section>
+</body>
+</html>

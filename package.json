@@ -1,0 +1,13 @@
+{
+  "name": "guardei",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Guardei: guarde posts, vídeos e links de qualquer lugar (PWA + extensão do Chrome + MCP).",
+  "type": "module",
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "icons": "node tools/icons.mjs",
+    "sync:ext": "node tools/sync-ext.mjs",
+    "test": "node tools/test-unit.mjs && node tools/test-ext.mjs && node tools/smoke.mjs"
+  }
+}
