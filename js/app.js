@@ -44,7 +44,7 @@ if (compartilhado) {
   history.replaceState(null, '', location.pathname + location.hash);
 }
 
-const marca = () => h('span', { class: 'marca-logo', 'aria-hidden': 'true' }, ic('marca'));
+const marca = () => h('img', { class: 'marca-logo', src: 'icons/marca.svg', alt: '', width: 30, height: 30 });
 
 // ---------- Login ----------
 function telaLogin() {
