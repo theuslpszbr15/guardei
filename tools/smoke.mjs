@@ -53,7 +53,7 @@ function responder(req) {
 }
 
 // ---------- Navegador ----------
-const browser = await puppeteer.launch({ executablePath: chromePath, headless: true, args: ['--no-sandbox'] });
+const browser = await puppeteer.launch({ executablePath: chromePath, headless: true, args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const erros = [];
 let passos = 0;
 const passo = (t) => console.log(`  ok  ${++passos}. ${t}`);
@@ -223,6 +223,22 @@ try {
   await p.waitForFunction(() => document.querySelectorAll('.card').length === 4);
   passo('exclui e desfaz');
 
+  // 13b. Mapa 3D
+  await p.goto(`${BASE}#/mapa`);
+  await p.waitForFunction(() => Number(document.querySelector('.mapa')?.dataset.nos) >= 6, { timeout: 20000 });
+  await p.waitForSelector('.mapa canvas');
+  await new Promise((r) => setTimeout(r, 2500));
+  const rotulos = await p.$$eval('.mapa-rotulo.pasta', (els) => els.map((e) => e.textContent));
+  assert(rotulos.includes('Receitas'), `rótulo da pasta no mapa (${rotulos})`);
+  await foto(p, '05b-mapa');
+  await clicarTexto(p, '.mapa-barra .filtro', 'Tags');
+  await p.waitForFunction(() => document.querySelectorAll('.mapa-rotulo.tag').length > 0);
+  await p.type('.mapa-barra input', 'massa');
+  await new Promise((r) => setTimeout(r, 1200));
+  await foto(p, '05c-mapa-destaque');
+  await p.goto(`${BASE}#/salvos`);
+  passo('mapa 3D com pastas, categorias, tags e destaque');
+
   // 14. Celular
   const m = await novaPagina(390, 844, true);
   await m.goto(`${BASE}#/salvos`, { waitUntil: 'networkidle0' });
@@ -250,6 +266,10 @@ try {
   await m.goto(`${BASE}#/pastas`);
   await esperarTexto(m, 'Receitas');
   await foto(m, '09-celular-pastas');
+  await m.goto(`${BASE}#/mapa`);
+  await m.waitForFunction(() => Number(document.querySelector('.mapa')?.dataset.nos) >= 6, { timeout: 20000 });
+  await new Promise((r) => setTimeout(r, 2500));
+  await foto(m, '09b-celular-mapa');
   await m.goto(`${BASE}#/chat`);
   await m.waitForSelector('.msg.ia');
   await foto(m, '10-celular-chat');

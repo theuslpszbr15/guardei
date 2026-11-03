@@ -99,6 +99,7 @@ function telaLogin() {
 const NAV = [
   { rota: 'salvos', rotulo: 'Início', icone: 'inicio' },
   { rota: 'pastas', rotulo: 'Pastas', icone: 'pastas' },
+  { rota: 'mapa', rotulo: 'Mapa', icone: 'mapa' },
   { rota: 'buscar', rotulo: 'Buscar', icone: 'buscar' },
   { rota: 'chat', rotulo: 'Conversa', icone: 'chat' },
 ];
@@ -120,8 +121,8 @@ function montarCasca() {
           h('span', { class: 'conta-txt' }, h('strong', {}, nome), h('small', {}, usuarioDe(est.user.email)))))),
     principal,
     h('nav', { class: 'abas', 'aria-label': 'Abas' },
-      h('div', { class: 'abas-grupo' }, NAV.slice(0, 3).map((n) => navLink(n, 'nav-item aba'))),
-      navLink(NAV[3], 'nav-item aba abas-chat'))));
+      h('div', { class: 'abas-grupo' }, NAV.slice(0, 4).map((n) => navLink(n, 'nav-item aba'))),
+      navLink(NAV[4], 'nav-item aba abas-chat'))));
 }
 
 function marcarNav(rota) {
@@ -143,10 +144,13 @@ const btnPilula = (icone, titulo, onclick, extra = {}) => botao('', { icone, tit
 function rotear() {
   const [rota = 'salvos', arg] = location.hash.replace(/^#\/?/, '').split('/');
   marcarNav(rota);
+  est.vista?.destruir?.();
   est.vista = null;
+  principal.classList.toggle('com-mapa', rota === 'mapa');
   scrollTo(0, 0);
   if (rota === 'salvo') return vistaDetalhe(arg);
   if (rota === 'pastas') return vistaPastas();
+  if (rota === 'mapa') return vistaMapa();
   if (rota === 'pasta') return vistaSalvos({ pastaId: arg });
   if (rota === 'chat') return vistaChat();
   if (rota === 'ajustes') return vistaAjustes(arg);
@@ -530,6 +534,54 @@ function vistaPastas() {
     grade);
   desenhar();
   est.vista = { atualizar: desenhar };
+}
+
+// ---------- Vista: mapa 3D ----------
+async function vistaMapa() {
+  const ver = (est.mapaVer ||= { pastas: true, cats: true, tags: false });
+  const palco = h('div', { class: 'mapa' }, h('p', { class: 'mapa-carregando mudo' }, 'Montando o mapa…'));
+  const busca = h('input', { type: 'search', placeholder: 'Destacar…', 'aria-label': 'Destacar no mapa' });
+  const contagem = h('span', { class: 'mudo pequeno mapa-contagem' });
+  const alternar = (chave, rotulo) => {
+    const b = h('button', { type: 'button', class: 'filtro', 'aria-pressed': String(ver[chave]) }, rotulo);
+    b.onclick = () => { ver[chave] = !ver[chave]; b.setAttribute('aria-pressed', String(ver[chave])); desenhar(); };
+    return b;
+  };
+  const centralizar = botao('', { icone: 'alvo', classe: 'btn-redondo', titulo: 'Centralizar' });
+  est.vista = { atualizar: () => {} };
+  principal.replaceChildren(
+    h('header', { class: 'topo' }, h('h1', {}, 'Mapa'), contagem),
+    h('div', { class: 'mapa-barra' }, h('label', { class: 'busca' }, ic('buscar'), busca),
+      h('div', { class: 'filtros' }, alternar('pastas', 'Pastas'), alternar('cats', 'Categorias'), alternar('tags', 'Tags')), centralizar),
+    palco,
+    h('p', { class: 'mapa-ajuda mudo pequeno' }, 'Arraste para girar · role ou pince para aproximar · botão direito ou dois dedos para mover · toque num salvo para abrir, numa pasta para chegar perto'));
+
+  const modulo = await import('./mapa.js');
+  if (!location.hash.startsWith('#/mapa')) return;
+  if (!modulo.suportaWebGL()) {
+    palco.replaceChildren(h('div', { class: 'vazio-estado' }, h('strong', {}, 'Seu navegador não mostra 3D'), h('p', { class: 'mudo' }, 'Ative a aceleração de hardware ou use outro navegador.')));
+    return;
+  }
+  palco.replaceChildren();
+  const mapa = modulo.montarMapa(palco, {
+    aoAbrirSalvo: (id) => { location.hash = `#/salvo/${id}`; },
+    aoAbrirPasta: (id) => { location.hash = `#/pasta/${id}`; },
+  });
+  let espera;
+  function desenhar() {
+    mapa.definir(est.salvos, est.pastas, ver);
+    mapa.destacar(busca.value);
+    contagem.textContent = `${est.salvos.length} salvos · ${est.pastas.length} pastas`;
+    palco.dataset.nos = String(mapa.total);
+  }
+  busca.oninput = () => mapa.destacar(busca.value);
+  centralizar.onclick = () => mapa.centralizar();
+  desenhar();
+  est.vista = {
+    atualizar: () => { clearTimeout(espera); espera = setTimeout(desenhar, 300); },
+    destruir: () => { clearTimeout(espera); mapa.destruir(); },
+    mapa,
+  };
 }
 
 // ---------- Vista: conversa ----------

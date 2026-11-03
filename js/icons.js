@@ -5,6 +5,8 @@ const P = {
   inicioCheio: F('M12.7 2.3a1 1 0 0 0-1.4 0l-9 9A1 1 0 0 0 3 13h1v6a3 3 0 0 0 3 3h2v-6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v6h2a3 3 0 0 0 3-3v-6h1a1 1 0 0 0 .7-1.7z'),
   pastas: '<path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2"/>',
   buscar: '<circle cx="10" cy="10" r="7"/><path d="m21 21-6-6"/>',
+  mapa: '<circle cx="5.5" cy="7" r="2.2"/><circle cx="17.5" cy="5" r="2.2"/><circle cx="12" cy="17" r="2.8"/><circle cx="19.5" cy="15.5" r="1.6"/><path d="m6.7 8.9 3.8 5.6M15.3 5.4l-7.6 1.2M13.3 14.6l3.2-7.6M14.8 16.4l3.2-.6"/>',
+  alvo: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>',
   chat: '<path d="M8 9h8M8 13h6"/><path d="M18 4a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-5l-5 3v-3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z"/>',
   perfil: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6.2 18.8A4 4 0 0 1 10 16h4a4 4 0 0 1 3.8 2.9"/>',
   filtros: '<circle cx="14" cy="6" r="2"/><path d="M4 6h8M16 6h4"/><circle cx="8" cy="12" r="2"/><path d="M4 12h2M10 12h10"/><circle cx="17" cy="18" r="2"/><path d="M4 18h11M19 18h1"/>',
