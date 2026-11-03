@@ -1,5 +1,5 @@
 // Cache do app para abrir rápido e offline. Dados vêm do Firestore (que tem o próprio cache).
-const VERSAO = 'guardei-v2';
+const VERSAO = 'guardei-v3';
 const ARQUIVOS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/cloud.js', 'js/config.js', 'js/gemini.js', 'js/icons.js', 'js/link.js', 'js/pipeline.js', 'js/search.js', 'js/ui.js',

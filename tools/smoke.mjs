@@ -104,7 +104,7 @@ try {
   await clicarTexto(p, '#aj-gemini button', 'Salvar');
   await esperarTexto(p, 'Salvo. Vale para todos');
   await clicarTexto(p, '#aj-gemini button', 'Testar');
-  await esperarTexto(p, 'Funcionou: ok');
+  await esperarTexto(p, 'Funcionou com');
   passo('salva e testa a chave da IA');
 
   // 3. Adicionar links

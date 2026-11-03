@@ -1,6 +1,7 @@
 // Testes rápidos sem navegador: links, busca, conversão do Firestore e ferramentas do MCP (com API falsa).
 import assert from 'node:assert/strict';
 import { deValor, paraValor } from '../js/firestore-rest.js';
+import { conversar, modeloObsoleto, ultimoModelo } from '../js/gemini.js';
 import { extrairUrl, normalizarUrl, plataformaDe, tipoDe } from '../js/link.js';
 import { buscar, termos } from '../js/search.js';
 import { criarFerramentas } from '../mcp/tools.mjs';
@@ -45,6 +46,29 @@ await ok('converte valores do Firestore nos dois sentidos', () => {
   const dados = { a: 'x', b: 3, c: 1.5, d: true, e: null, f: ['p', 2], g: { h: 'i' } };
   const volta = Object.fromEntries(Object.entries(dados).map(([k, v]) => [k, deValor(paraValor(v))]));
   assert.deepEqual(volta, dados);
+});
+
+await ok('Gemini: troca sozinho de modelo quando o Google desativa o antigo', async () => {
+  const pedidos = [];
+  const fetchOriginal = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    pedidos.push(String(url));
+    const resp = (status, corpo) => ({ ok: status === 200, status, json: async () => corpo });
+    if (String(url).includes('gemini-2.5')) return resp(404, { error: { message: 'This model models/gemini-2.5-flash-lite is no longer available to new users.' } });
+    if (String(url).includes('gemini-3.5-flash-lite')) return resp(400, { error: { message: 'This model is no longer available to new users.' } });
+    return resp(200, { candidates: [{ content: { parts: [{ text: 'ok' }] } }] });
+  };
+  try {
+    assert.equal(modeloObsoleto('gemini-2.5-flash-lite'), true);
+    assert.equal(modeloObsoleto('gemini-3.6-flash'), false);
+    assert.equal(await conversar({ chave: 'x', modelo: 'gemini-2.5-flash-lite' }, [{ de: 'eu', texto: 'oi' }], []), 'ok');
+    assert.equal(ultimoModelo(), 'gemini-3.6-flash');
+    assert.ok(!pedidos.some((u) => u.includes('gemini-2.5')), 'não deveria nem tentar o 2.5');
+    globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ error: { message: 'API key not valid.' } }) });
+    await assert.rejects(conversar({ chave: 'x' }, [{ de: 'eu', texto: 'oi' }], []), /API key not valid/);
+  } finally {
+    globalThis.fetch = fetchOriginal;
+  }
 });
 
 await ok('ferramentas do MCP: busca, pasta, guardar e adicionar', async () => {

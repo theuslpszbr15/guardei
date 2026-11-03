@@ -1,7 +1,7 @@
 // Guardei: guarda posts, vídeos e links de qualquer lugar, organiza com IA e acha do jeito que você lembra.
 import * as nuvem from './cloud.js';
-import { CATEGORIAS, GEMINI_MODELO_PADRAO, usuarioDe } from './config.js';
-import { conversar } from './gemini.js';
+import { CATEGORIAS, GEMINI_MODELOS, GEMINI_MODELO_PADRAO, usuarioDe } from './config.js';
+import { conversar, modeloObsoleto, ultimoModelo } from './gemini.js';
 import { iconeCategoria } from './icons.js';
 import { extrairUrl, nomePlataforma, normalizarUrl, plataformaDe, tipoDe } from './link.js';
 import { criarFila } from './pipeline.js';
@@ -623,7 +623,8 @@ function vistaAjustes(secao) {
   const uid = est.user.uid;
   const appUrl = location.origin + location.pathname;
   const chaveIn = h('input', { type: 'password', autocomplete: 'off', placeholder: 'Chave da API (AIza…)', value: est.ajustes.geminiKey || '', 'aria-label': 'Chave do Gemini' });
-  const modeloIn = h('input', { value: est.ajustes.modelo || GEMINI_MODELO_PADRAO, 'aria-label': 'Modelo', list: 'modelos', placeholder: 'Modelo' });
+  const modeloSalvo = modeloObsoleto(est.ajustes.modelo) ? GEMINI_MODELO_PADRAO : est.ajustes.modelo;
+  const modeloIn = h('input', { value: modeloSalvo, 'aria-label': 'Modelo', list: 'modelos', placeholder: 'Modelo' });
   const status = h('p', { class: 'mudo pequeno', role: 'status' });
   const tema = h('select', { 'aria-label': 'Tema' }, [['sistema', 'Automático'], ['claro', 'Claro'], ['escuro', 'Escuro']].map(([v, r]) => h('option', { value: v, selected: v === (localStorage.getItem('guardei:tema') || 'sistema') }, r)));
   tema.onchange = () => { localStorage.setItem('guardei:tema', tema.value); aplicarTema(tema.value); };
@@ -633,10 +634,16 @@ function vistaAjustes(secao) {
     status.textContent = 'Salvo. Vale para todos os seus aparelhos.';
   };
   const testarIa = async () => {
+    if (!chaveIn.value.trim()) {
+      status.textContent = 'Cole a chave primeiro.';
+      return;
+    }
     status.textContent = 'Testando…';
     try {
-      const r = await conversar({ chave: chaveIn.value.trim(), modelo: modeloIn.value.trim() }, [{ de: 'eu', texto: 'Responda só: ok' }], []);
-      status.textContent = `Funcionou: ${r.slice(0, 40)}`;
+      await conversar({ chave: chaveIn.value.trim(), modelo: modeloIn.value.trim() }, [{ de: 'eu', texto: 'Responda só: ok' }], []);
+      modeloIn.value = ultimoModelo() || modeloIn.value;
+      salvarIa();
+      status.textContent = `Funcionou com ${modeloIn.value}. Chave salva para todos os seus aparelhos.`;
     } catch (e) {
       status.textContent = `Falhou: ${e.message}`;
     }
@@ -656,7 +663,7 @@ function vistaAjustes(secao) {
         h('div', {}, h('strong', {}, nome), h('p', { class: 'mudo pequeno' }, `${usuarioDe(est.user.email)} · ${est.salvos.length} salvos · ${est.pastas.length} pastas`))),
       secaoEl('gemini', 'IA (Google Gemini)',
         h('div', { class: 'grupo' }, h('label', { class: 'grupo-linha' }, chaveIn), h('label', { class: 'grupo-linha' }, modeloIn),
-          h('datalist', { id: 'modelos' }, ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'].map((m) => h('option', { value: m })))),
+          h('datalist', { id: 'modelos' }, GEMINI_MODELOS.map((m) => h('option', { value: m })))),
         h('p', { class: 'mudo pequeno' }, 'Resumo, transcrição, categoria e conversa usam a sua chave do Gemini (tem plano grátis). Ela fica guardada só na sua conta.'),
         h('div', { class: 'acoes inicio' }, botao('Salvar', { classe: 'btn-pri', onclick: salvarIa }), botao('Testar', { classe: 'btn-sec', onclick: testarIa }),
           h('a', { class: 'btn btn-sec', href: 'https://aistudio.google.com/apikey', target: '_blank', rel: 'noopener noreferrer' }, 'Pegar chave grátis', ic('externo'))),

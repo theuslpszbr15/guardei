@@ -1,23 +1,66 @@
 // IA do app via Gemini (chave do próprio usuário). Lê o link, resume, classifica e responde no chat.
-import { CATEGORIAS, GEMINI_MODELO_PADRAO } from './config.js';
+import { CATEGORIAS, GEMINI_MODELOS } from './config.js';
 
-const API = 'https://generativelanguage.googleapis.com/v1beta/models';
+const BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
-async function gerar({ chave, modelo, partes, ferramentas, sistema, temperatura = 0.3 }) {
-  const corpo = {
-    contents: [{ role: 'user', parts: partes }],
-    generationConfig: { temperature: temperatura },
-  };
-  if (sistema) corpo.systemInstruction = { parts: [{ text: sistema }] };
-  if (ferramentas) corpo.tools = ferramentas;
-  const r = await fetch(`${API}/${encodeURIComponent(modelo || GEMINI_MODELO_PADRAO)}:generateContent`, {
+// Modelos 1.x/2.x não aceitam mais contas novas; nesses casos usamos os atuais.
+export const modeloObsoleto = (m) => !m || /^(models\/)?gemini-[12]\./.test(m);
+const indisponivel = (status, msg) => status === 404 || /no longer available|not found|not supported|deprecated|is not available/i.test(msg);
+let modeloEmUso = '';
+export const ultimoModelo = () => modeloEmUso;
+
+async function postar(url, chave, corpo, extra = {}) {
+  const r = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': chave },
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': chave, ...extra },
     body: JSON.stringify(corpo),
   });
   const dados = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(dados.error?.message || `Gemini respondeu ${r.status}`);
-  return (dados.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('').trim();
+  if (!r.ok) {
+    const e = new Error(dados.error?.message || `Gemini respondeu ${r.status}`);
+    e.indisponivel = indisponivel(r.status, e.message);
+    throw e;
+  }
+  return dados;
+}
+
+async function viaGenerateContent(modelo, { chave, partes, ferramentas, sistema, temperatura }) {
+  const corpo = { contents: [{ role: 'user', parts: partes }], generationConfig: { temperature: temperatura } };
+  if (sistema) corpo.systemInstruction = { parts: [{ text: sistema }] };
+  if (ferramentas) corpo.tools = ferramentas;
+  const d = await postar(`${BASE}/models/${encodeURIComponent(modelo)}:generateContent`, chave, corpo);
+  return (d.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('').trim();
+}
+
+// API nova (Interactions), usada se o generateContent não aceitar nenhum modelo.
+async function viaInteractions(modelo, { chave, partes, sistema }) {
+  const texto = [sistema, ...partes.map((p) => p.text || (p.fileData ? `Vídeo: ${p.fileData.fileUri}` : ''))].filter(Boolean).join('\n\n');
+  const d = await postar(`${BASE}/interactions`, chave, { model: modelo, input: texto, store: false }, { 'Api-Revision': '2026-05-20' });
+  return (d.output_text || (d.steps || []).filter((s) => s.type === 'model_output').flatMap((s) => s.content || [])
+    .filter((c) => c.type === 'text').map((c) => c.text).join('')).trim();
+}
+
+async function gerar({ chave, modelo, partes, ferramentas, sistema, temperatura = 0.3 }) {
+  const args = { chave, partes, ferramentas, sistema, temperatura };
+  const modelos = [...new Set([modeloObsoleto(modelo) ? '' : modelo, ...GEMINI_MODELOS].filter(Boolean))];
+  let erro;
+  for (const m of modelos) {
+    try {
+      const r = await viaGenerateContent(m, args);
+      modeloEmUso = m;
+      return r;
+    } catch (e) {
+      erro = e;
+      if (!e.indisponivel) throw e;
+    }
+  }
+  try {
+    const r = await viaInteractions(modelos[0], args);
+    modeloEmUso = modelos[0];
+    return r;
+  } catch {
+    throw erro;
+  }
 }
 
 export function lerJson(texto) {
