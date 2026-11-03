@@ -376,6 +376,8 @@ function vistaSalvos({ pastaId, busca: modoBusca = false } = {}) {
         h('strong', {}, base.length ? 'Nada encontrado' : pasta ? 'Pasta vazia' : 'Nada guardado ainda'),
         h('p', { class: 'mudo' }, base.length ? 'Tente outras palavras ou limpe os filtros.'
           : pasta ? 'Use “Adicionar à pasta” em qualquer salvo.' : 'Compartilhe um post com o Guardei pelo celular ou cole um link aqui.'),
+        !base.length && !pasta ? h('p', { class: 'mudo pequeno' }, `Conta: ${usuarioDe(est.user.email)}. Guardou em outro aparelho? Confira se entrou com a mesma conta.`) : null,
+        base.length && (est.q || est.categoria || est.verDepois) ? botao('Limpar filtros', { classe: 'btn-sec', onclick: () => { est.q = ''; est.categoria = ''; est.verDepois = false; rotear(); } }) : null,
         !base.length && !pasta ? botao('Adicionar link', { icone: 'mais', classe: 'btn-pri', onclick: folhaAdicionar }) : null));
     } else {
       grade.replaceChildren(...lista.map(cartao));
@@ -782,6 +784,7 @@ async function iniciar(user) {
   montarCasca();
   const fila = criarFila(user.uid, ia);
   let primeira = true;
+  let esperaNuvem = 0;
   nuvem.ouvirAjustes(user.uid, (a) => {
     est.ajustes = a;
     if (est.carregado && /^#\/(ajustes|chat|pastas)/.test(location.hash) && !principal.contains(document.activeElement)) rotear();
@@ -790,6 +793,12 @@ async function iniciar(user) {
   nuvem.ouvirSalvos(user.uid, (s, sync) => {
     est.sync = sync;
     est.salvos = s;
+    // Aparelho novo: o primeiro retorno vem do cache vazio; espera a nuvem antes de dizer que não há nada.
+    if (!est.carregado && !s.length && sync.doCache) {
+      if (!esperaNuvem) esperaNuvem = setTimeout(() => { est.carregado = true; atualizar(); }, 10000);
+      return;
+    }
+    clearTimeout(esperaNuvem);
     est.carregado = true;
     fila(s);
     if (primeira) {

@@ -47,6 +47,8 @@ h2 { font-size: 20px; font-weight: 600; }
 p { margin: 0; }
 a { color: inherit; }
 button, input, select, textarea { font: inherit; color: inherit; }
+/* Lista nativa do select: sem isso, no tema escuro as opções ficam brancas sobre branco. */
+select option { background-color: var(--card-2); color: var(--txt); }
 img { display: block; }
 [hidden] { display: none !important; }
 :focus-visible { outline: 2px solid var(--azul); outline-offset: 2px; }

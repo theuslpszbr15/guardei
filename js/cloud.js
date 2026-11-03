@@ -28,7 +28,11 @@ import { APP_ID, emailDe, firebaseConfig } from './config.js';
 
 const app = initializeApp(firebaseConfig);
 export const auth = initializeAuth(app, { persistence: indexedDBLocalPersistence });
-const db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
+// Long polling automático: algumas redes móveis/proxies cortam o streaming do Firestore.
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+  experimentalAutoDetectLongPolling: true,
+});
 
 export function sessaoAtual() {
   return new Promise((resolve) => {

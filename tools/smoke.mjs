@@ -239,6 +239,22 @@ try {
   await p.goto(`${BASE}#/salvos`);
   passo('mapa 3D com pastas, categorias, tags e destaque');
 
+  // 13c. Outro aparelho (contexto anônimo): mesma conta enxerga os mesmos salvos
+  const outro = await browser.createBrowserContext();
+  const o = await outro.newPage();
+  await o.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+  await o.setRequestInterception(true);
+  o.on('request', responder);
+  await o.goto(BASE, { waitUntil: 'networkidle0' });
+  await o.waitForSelector('.login-form');
+  await o.type('input[name=usuario]', USUARIO);
+  await o.type('input[name=senha]', SENHA);
+  await o.click('.login-form button[type=submit]');
+  await o.waitForFunction(() => document.querySelectorAll('.card a').length === 4, { timeout: 25000 });
+  assert(!(await o.evaluate(() => document.body.innerText.includes('Nada guardado'))), 'aparelho novo não deveria dizer que está vazio');
+  await outro.close();
+  passo('outro aparelho (aba anônima) vê os mesmos 4 salvos da conta');
+
   // 14. Celular
   const m = await novaPagina(390, 844, true);
   await m.goto(`${BASE}#/salvos`, { waitUntil: 'networkidle0' });
@@ -278,6 +294,8 @@ try {
   await m.goto(`${BASE}#/salvos`);
   await m.waitForFunction(() => document.querySelectorAll('.card').length === 4);
   await foto(m, '11-celular-escuro');
+  const corOpcao = await m.$eval('select[aria-label=Categoria] option', (o) => getComputedStyle(o).backgroundColor);
+  assert(corOpcao !== 'rgba(0, 0, 0, 0)' && corOpcao !== 'rgb(255, 255, 255)', `opções do select no escuro com fundo ${corOpcao}`);
   passo('layout de celular e tema escuro');
 
   if (erros.length) throw new Error(`Erros no console:\n${erros.join('\n')}`);
