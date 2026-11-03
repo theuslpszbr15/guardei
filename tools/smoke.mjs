@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { APP_ID, emailDe, firebaseConfig } from '../js/config.js';
-import { apagarConta, cliente, login } from '../js/firestore-rest.js';
+import { apagarConta, cadastrar, cliente, login } from '../js/firestore-rest.js';
 import { criarFerramentas } from '../mcp/tools.mjs';
 import { chromePath, puppeteerPath } from './browser.mjs';
 
@@ -83,6 +83,25 @@ const foto = async (p, nome) => {
 
 let sessao;
 try {
+  // 0. Login do Controle Pessoal (app Firebase padrão, mesmo domínio) não pode entrar sozinho no Guardei
+  {
+    const ctx = await browser.createBrowserContext();
+    const cp = await ctx.newPage();
+    await cp.goto(`${BASE}tools/`, { waitUntil: 'domcontentloaded' }).catch(() => {});
+    const contaCp = await cadastrar(firebaseConfig.apiKey, emailDe(`cp${USUARIO}`), SENHA);
+    await cp.evaluate(async (cfg, email, senha) => {
+      const { initializeApp } = await import('/vendor/firebase/firebase-app.js');
+      const { initializeAuth, indexedDBLocalPersistence, signInWithEmailAndPassword } = await import('/vendor/firebase/firebase-auth.js');
+      const auth = initializeAuth(initializeApp(cfg), { persistence: indexedDBLocalPersistence });
+      await signInWithEmailAndPassword(auth, email, senha);
+    }, firebaseConfig, emailDe(`cp${USUARIO}`), SENHA);
+    await cp.goto(BASE, { waitUntil: 'networkidle0' });
+    await cp.waitForSelector('.login-form', { timeout: 15000 });
+    await apagarConta(firebaseConfig.apiKey, contaCp.idToken);
+    await ctx.close();
+    passo('sessão do Controle Pessoal no mesmo domínio não entra sozinha no Guardei');
+  }
+
   const p = await novaPagina(1280, 860);
   await p.goto(BASE, { waitUntil: 'networkidle0' });
 
@@ -95,7 +114,15 @@ try {
   await p.type('input[name=senha]', SENHA);
   await p.click('.login-form button[type=submit]');
   await esperarTexto(p, 'Nada guardado ainda');
-  passo('cria conta e entra');
+  const chaves = await p.evaluate(() => new Promise((ok) => {
+    const r = indexedDB.open('firebaseLocalStorageDb');
+    r.onsuccess = () => {
+      const q = r.result.transaction('firebaseLocalStorage').objectStore('firebaseLocalStorage').getAllKeys();
+      q.onsuccess = () => ok(q.result);
+    };
+  }));
+  assert(chaves.some((k) => k.endsWith(':guardei')) && !chaves.some((k) => k.endsWith(':[DEFAULT]')), `sessão separada do Controle Pessoal (${chaves})`);
+  passo('cria conta e entra (sessão própria, separada do Controle Pessoal)');
 
   // 2. Chave do Gemini
   await p.goto(`${BASE}#/ajustes`);

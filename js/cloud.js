@@ -26,7 +26,9 @@ import {
 } from '../vendor/firebase/firebase-firestore.js';
 import { APP_ID, emailDe, firebaseConfig } from './config.js';
 
-const app = initializeApp(firebaseConfig);
+// Nome próprio: o Controle Pessoal está no mesmo domínio (github.io) e, com o app padrão,
+// o login de um entrava sozinho no outro.
+const app = initializeApp(firebaseConfig, APP_ID);
 export const auth = initializeAuth(app, { persistence: indexedDBLocalPersistence });
 // Long polling automático: algumas redes móveis/proxies cortam o streaming do Firestore.
 const db = initializeFirestore(app, {
