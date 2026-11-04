@@ -1,13 +1,13 @@
 // Guardei: guarda posts, vídeos e links de qualquer lugar, organiza com IA e acha do jeito que você lembra.
 import * as nuvem from './cloud.js';
 import { CATEGORIAS, GEMINI_MODELOS, GEMINI_MODELO_PADRAO, usuarioDe } from './config.js';
-import { conversar, modeloObsoleto, ultimoModelo } from './gemini.js';
+import { conferirBusca, conversar, modeloObsoleto, transcreverVideo, ultimoModelo } from './gemini.js';
 import { iconeCategoria } from './icons.js';
 import { extrairUrl, nomePlataforma, normalizarUrl, plataformaDe, tipoDe } from './link.js';
 import { criarFila } from './pipeline.js';
 import { qrSvg } from './qr.js';
 import { buscar, normalizar, termos } from './search.js';
-import { criarIndexador, modeloDosIndices, rankear, refinarTrechos, trechoDe, vetorDaConsulta } from './semantica.js';
+import { criarIndexador, modeloDosIndices, rankear, segundos, textoDaParte, trechoDaCitacao, trechoDe, vetorDaConsulta } from './semantica.js';
 import { botao, confirmar, copiar, dia, folha, h, ic, menu, toast } from './ui.js';
 
 const raiz = document.getElementById('app');
@@ -27,6 +27,8 @@ const est = {
   sync: { pendentes: 0, doCache: true },
 };
 const ia = () => (est.ajustes.geminiKey ? { chave: est.ajustes.geminiKey, modelo: est.ajustes.modelo || GEMINI_MODELO_PADRAO } : null);
+// Resultado da IA por busca (a mesma pergunta não gasta outra chamada).
+const conferidas = new Map();
 
 // ---------- Tema ----------
 function aplicarTema(t = localStorage.getItem('guardei:tema') || 'sistema') {
@@ -339,31 +341,64 @@ function vistaSalvos({ pastaId, busca: modoBusca = false } = {}) {
   const selBtn = botao('Selecionar', { icone: 'selecionar', classe: 'filtro' });
   const barraSel = h('div', { class: 'barra-sel', hidden: true });
   const filtros = h('div', { class: 'filtros' }, verDepois, cat, selBtn);
-  const barra = h('div', { class: `barra${modoBusca ? ' modo-busca' : ''}` }, contagem, h('div', { class: 'linha-busca' }, h('label', { class: 'busca' }, ic('buscar'), busca), filtros));
+  const Reconhecer = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const mic = Reconhecer ? botao('', { icone: 'microfone', classe: 'btn-mic', titulo: 'Buscar falando' }) : null;
+  const barra = h('div', { class: `barra${modoBusca ? ' modo-busca' : ''}` }, contagem, h('div', { class: 'linha-busca' }, h('label', { class: 'busca' }, ic('buscar'), busca, mic), filtros));
 
   busca.oninput = () => { est.q = busca.value; desenhar(); };
   verDepois.onclick = () => { est.verDepois = !est.verDepois; desenhar(); };
   cat.onchange = () => { est.categoria = cat.value; desenhar(); };
   selBtn.onclick = () => { est.selecao = est.selecao ? null : new Set(); desenhar(); };
+  if (mic) {
+    mic.onclick = (e) => {
+      e.preventDefault();
+      const r = new Reconhecer();
+      r.lang = 'pt-BR';
+      r.interimResults = true;
+      mic.classList.add('ouvindo');
+      busca.placeholder = 'Pode falar…';
+      r.onresult = (ev) => { busca.value = [...ev.results].map((x) => x[0].transcript).join(''); est.q = busca.value; desenhar(); };
+      r.onerror = (ev) => { if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') toast('Permita o microfone para buscar falando.'); };
+      r.onend = () => { mic.classList.remove('ouvindo'); busca.placeholder = modoBusca ? 'Buscar' : 'Buscar do jeito que você lembra'; };
+      r.start();
+    };
+  }
 
-  // Busca pelo assunto (IA): pede o vetor da pergunta uma vez por texto, com uma pequena espera ao digitar.
-  const sem = { q: '', qv: null, modelo: '', estado: '', t: 0 };
+  // Busca pelo assunto: vetores acham candidatos parecidos e a IA confere quais realmente têm a ver.
+  const sem = { q: '', estado: '', itens: [], t: 0 };
   function pedirSemantica(q) {
-    if (!ia() || q.length < 3) { sem.q = ''; sem.estado = ''; return; }
+    if (!ia() || q.length < 3) { Object.assign(sem, { q: '', estado: '', itens: [] }); return; }
     if (sem.q === q) return;
-    Object.assign(sem, { q, qv: null, estado: 'buscando' });
+    Object.assign(sem, { q, estado: 'buscando', itens: [] });
     clearTimeout(sem.t);
     sem.t = setTimeout(async () => {
+      const chaveCache = `${q}|${est.salvos.length}`;
+      if (conferidas.has(chaveCache)) {
+        Object.assign(sem, { estado: 'ok', itens: conferidas.get(chaveCache) });
+        return desenhar();
+      }
       const modelo = modeloDosIndices(est.salvos);
-      if (!modelo) { sem.estado = 'sem-indice'; desenhar(); return; }
+      if (!modelo) { sem.estado = 'sem-indice'; return desenhar(); }
       try {
         const qv = await vetorDaConsulta(ia().chave, q, modelo);
-        if (sem.q === q) Object.assign(sem, { qv, modelo, estado: 'ok' });
+        if (sem.q !== q) return;
+        const porPalavra = new Set(buscar(est.salvos, q).map((s) => s.id));
+        const candidatos = rankear(est.salvos.filter((s) => !porPalavra.has(s.id)), qv, modelo, { max: 10, piso: 0.15, janela: 0.35 })
+          .map((x) => ({ ...x, ...textoDaParte(x.s, x.ref) }));
+        let itens = [];
+        if (candidatos.length) {
+          sem.estado = 'conferindo';
+          desenhar();
+          itens = (await conferirBusca(ia(), q, candidatos))
+            .map((x) => ({ id: x.s.id, motivo: x.motivo, trecho: x.citacao ? trechoDaCitacao(x.s, x.citacao) : null }));
+        }
+        conferidas.set(chaveCache, itens);
+        if (sem.q === q) Object.assign(sem, { estado: 'ok', itens });
       } catch {
         if (sem.q === q) sem.estado = 'erro';
       }
       if (sem.q === q) desenhar();
-    }, 450);
+    }, 500);
   }
 
   // Mostra de onde veio o resultado quando a palavra só aparece na transcrição/legenda.
@@ -420,29 +455,28 @@ function vistaSalvos({ pastaId, busca: modoBusca = false } = {}) {
     lista = buscar(lista, est.q);
     const q = est.q.trim();
     pedirSemantica(q);
-    const porAssunto = sem.qv && sem.q === q
-      ? rankear(filtrada.filter((s) => !lista.includes(s)), sem.qv, sem.modelo)
+    const naLista = new Set(lista.map((s) => s.id));
+    const porAssunto = sem.q === q
+      ? sem.itens.map((it) => ({ ...it, s: filtrada.find((s) => s.id === it.id) })).filter((x) => x.s && !naLista.has(x.s.id))
       : [];
-    if (porAssunto.length && sem.refinado !== q) {
-      sem.refinado = q;
-      refinarTrechos(ia().chave, sem.modelo, sem.qv, q, porAssunto).then((mudou) => { if (mudou && sem.q === q) desenhar(); }).catch(() => {});
-    }
     const faltam = est.indexador?.faltam() || 0;
+    const esperando = q && (sem.estado === 'buscando' || sem.estado === 'conferindo');
     const nota = !q || est.selecao ? null
       : !ia() ? h('p', { class: 'grade-nota mudo pequeno' }, 'Para achar também pelo assunto (o que foi falado no vídeo), ', h('a', { href: '#/ajustes/gemini' }, 'conecte o Gemini'), '.')
         : sem.estado === 'buscando' ? h('p', { class: 'grade-nota mudo pequeno' }, 'Procurando também pelo assunto…')
-          : sem.estado === 'erro' ? h('p', { class: 'grade-nota mudo pequeno' }, 'A busca por assunto falhou agora. A busca por palavras continua funcionando.')
-            : faltam ? h('p', { class: 'grade-nota mudo pequeno' }, `Preparando ${faltam} salvo${faltam > 1 ? 's' : ''} para a busca por assunto…`)
-              : null;
+          : sem.estado === 'conferindo' ? h('p', { class: 'grade-nota mudo pequeno' }, 'A IA está conferindo o que tem a ver…')
+            : sem.estado === 'erro' ? h('p', { class: 'grade-nota mudo pequeno' }, 'A busca por assunto falhou agora. A busca por palavras continua funcionando.')
+              : faltam ? h('p', { class: 'grade-nota mudo pequeno' }, `Preparando ${faltam} salvo${faltam > 1 ? 's' : ''} para a busca por assunto…`)
+                : null;
     contagem.textContent = base.length === 1 ? '1 salvo' : `${base.length} salvos`;
     grade.classList.toggle('selecionando', !!est.selecao);
 
     if (!est.carregado) {
       grade.replaceChildren(...Array.from({ length: 6 }, () => h('div', { class: 'card esqueleto' })));
-    } else if (!lista.length && !porAssunto.length && !(q && sem.estado === 'buscando')) {
+    } else if (!lista.length && !porAssunto.length && !esperando) {
       grade.replaceChildren(h('div', { class: 'vazio-estado' },
         h('strong', {}, base.length ? 'Nada encontrado' : pasta ? 'Pasta vazia' : 'Nada guardado ainda'),
-        h('p', { class: 'mudo' }, base.length ? 'Tente outras palavras ou limpe os filtros.'
+        h('p', { class: 'mudo' }, base.length ? (q && ia() ? 'Nem por palavra nem pelo assunto. Tente descrever de outro jeito.' : 'Tente outras palavras ou limpe os filtros.')
           : pasta ? 'Use “Adicionar à pasta” em qualquer salvo.' : 'Compartilhe um post com o Guardei pelo celular ou cole um link aqui.'),
         !base.length && !pasta ? h('p', { class: 'mudo pequeno' }, `Conta: ${usuarioDe(est.user.email)}. Guardou em outro aparelho? Confira se entrou com a mesma conta.`) : null,
         base.length && (est.q || est.categoria || est.verDepois) ? botao('Limpar filtros', { classe: 'btn-sec', onclick: () => { est.q = ''; est.categoria = ''; est.verDepois = false; rotear(); } }) : null,
@@ -452,7 +486,7 @@ function vistaSalvos({ pastaId, busca: modoBusca = false } = {}) {
       grade.replaceChildren(
         ...lista.map((s) => cartao(s, q ? trechoPorPalavra(s, q) : null)),
         ...(porAssunto.length ? [h('h2', { class: 'grade-titulo' }, lista.length ? 'Também pode ser, pelo assunto' : 'Pelo assunto')] : []),
-        ...porAssunto.map((x) => cartao(x.s, trechoDe(x.s, x.ref, q), true)),
+        ...porAssunto.map((x) => cartao(x.s, x.trecho, x.motivo || true)),
         ...(nota ? [nota] : []));
     }
 
@@ -477,7 +511,8 @@ function vistaSalvos({ pastaId, busca: modoBusca = false } = {}) {
           s.verDepois ? h('span', { class: 'marca-relogio', title: 'Ver depois' }, ic('relogio')) : null,
           h('time', { datetime: new Date(s.criadoEm).toISOString() }, dia(s.criadoEm))),
         h('span', { class: `card-titulo${lendo ? ' lendo' : ''}` }, titulo),
-        trecho ? h('span', { class: 'card-trecho' }, h('b', {}, `${trecho.onde}: `), trecho.texto) : null,
+        typeof porAssunto === 'string' ? h('span', { class: 'card-motivo' }, porAssunto) : null,
+        trecho ? h('span', { class: 'card-trecho' }, trecho.onde || trecho.minuto ? h('b', {}, `${trecho.onde || 'Trecho'}${trecho.minuto ? ` aos ${trecho.minuto.rotulo}` : ''}: `) : null, trecho.texto) : null,
         s.categoria ? chipCategoria(s.categoria, 'card-cat') : null),
       est.selecao ? h('span', { class: `marcador${sel ? ' on' : ''}`, 'aria-hidden': 'true' }, ic('check')) : null,
     ];
@@ -502,13 +537,61 @@ const ABAS = [
   ['resumo', 'Resumo', 'Sem resumo ainda.'],
   ['legenda', 'Legenda', 'Sem legenda neste.'],
   ['transcricao', 'Transcrição', 'Sem fala neste.'],
-  ['textoNaTela', 'Texto na tela', 'Nenhum texto na tela.'],
+  ['textoNaTela', 'Na tela', 'Nenhum texto na tela.'],
+  ['visual', 'Visual', 'Sem descrição do que aparece.'],
 ];
 let abaAtual = 'resumo';
+const LIMITE_VIDEO = 19 * 1024 * 1024;
+
+// Transcrição com [m:ss] vira minutos clicáveis (no YouTube abre o vídeo naquele ponto).
+function textoComMinutos(texto, s) {
+  const pedacos = texto.split(/(\[\d{1,2}:\d{2}(?::\d{2})?\])/);
+  return pedacos.map((p) => {
+    const m = p.match(/^\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]$/);
+    if (!m) return p;
+    const rotulo = p.slice(1, -1);
+    if (s.plataforma !== 'youtube') return h('span', { class: 'minuto' }, rotulo);
+    const url = new URL(s.url);
+    url.searchParams.set('t', `${segundos(m)}s`);
+    return h('a', { class: 'minuto', href: url.href, target: '_blank', rel: 'noopener noreferrer', title: `Abrir aos ${rotulo}` }, rotulo);
+  });
+}
+
+const lerBase64 = (arquivo) => new Promise((ok, falha) => {
+  const r = new FileReader();
+  r.onload = () => ok(String(r.result).split(',')[1] || '');
+  r.onerror = () => falha(r.error);
+  r.readAsDataURL(arquivo);
+});
 
 function vistaDetalhe(id) {
   const caixa = h('div', { class: 'detalhe' });
   let notaAberta = false;
+  let transcrevendo = false;
+  const arquivo = h('input', { type: 'file', accept: 'video/*', hidden: true });
+  arquivo.onchange = async () => {
+    const f = arquivo.files[0];
+    arquivo.value = '';
+    const s = est.salvos.find((x) => x.id === id);
+    if (!f || !s) return;
+    if (f.size > LIMITE_VIDEO) return toast('Vídeo grande demais (máximo 19 MB). Use um trecho menor.');
+    transcrevendo = true;
+    desenhar();
+    try {
+      const r = await transcreverVideo(ia(), s, { base64: await lerBase64(f), mime: f.type });
+      nuvem.atualizarSalvo(est.user.uid, s.id, {
+        transcricao: r.transcricao, textoNaTela: r.textoNaTela || s.textoNaTela || '', visual: r.visual || s.visual || '',
+        resumo: r.resumo || s.resumo || '', tags: [...new Set([...(s.tags || []), ...r.tags])].slice(0, 10),
+        transcricaoManual: true, avisoIa: '',
+      });
+      abaAtual = r.transcricao ? 'transcricao' : 'visual';
+      toast(r.transcricao ? 'Transcrição adicionada. Já entra na busca.' : 'Sem fala no vídeo; guardei o que aparece nele.');
+    } catch (e) {
+      toast(`A IA não conseguiu ler o vídeo: ${e.message}`);
+    }
+    transcrevendo = false;
+    desenhar();
+  };
   function desenhar() {
     const s = est.salvos.find((x) => x.id === id);
     if (!s) {
@@ -543,7 +626,7 @@ function vistaDetalhe(id) {
     painel.setAttribute('aria-label', rotuloAba);
     painel.replaceChildren(
       conteudo ? h('div', { class: 'painel-topo' }, botao('Copiar', { icone: 'copiar', classe: 'btn-sec btn-peq', onclick: () => copiar(conteudo) })) : null,
-      lendo ? h('p', { class: 'mudo' }, 'Lendo o conteúdo…') : h('p', { class: `texto-longo${conteudo ? '' : ' mudo'}` }, conteudo || vazioAba));
+      lendo ? h('p', { class: 'mudo' }, 'Lendo o conteúdo…') : h('p', { class: `texto-longo${conteudo ? '' : ' mudo'}` }, conteudo ? textoComMinutos(conteudo, s) : vazioAba));
 
     const avisos = [];
     if (s.status === 'erro') avisos.push(h('div', { class: 'aviso erro' }, h('span', {}, `Não consegui ler: ${s.erro || 'erro desconhecido'}`), botao('Tentar de novo', { classe: 'btn-sec btn-peq', onclick: () => nuvem.atualizarSalvo(uid, s.id, { status: 'pendente', erro: '' }) })));
@@ -561,7 +644,13 @@ function vistaDetalhe(id) {
       h('div', { class: 'detalhe-grade' },
         h('div', { class: 'detalhe-midia' },
           h('div', { class: 'detalhe-capa' }, capa(s, 'grande')),
-          h('a', { class: 'btn btn-sec btn-largo', href: s.url, target: '_blank', rel: 'noopener noreferrer' }, ic(s.plataforma || 'web'), h('span', {}, 'Abrir original'), ic('externo'))),
+          h('a', { class: 'btn btn-sec btn-largo', href: s.url, target: '_blank', rel: 'noopener noreferrer' }, ic(s.plataforma || 'web'), h('span', {}, 'Abrir original'), ic('externo')),
+          ia() && s.plataforma !== 'youtube' && !lendo
+            ? h('div', { class: 'enviar-video' },
+              botao(transcrevendo ? 'Ouvindo o vídeo…' : s.transcricaoManual ? 'Enviar o vídeo de novo' : 'Transcrever o vídeo', { icone: 'microfone', classe: 'btn-sec btn-largo', disabled: transcrevendo, onclick: () => arquivo.click() }),
+              h('p', { class: 'mudo pequeno' }, 'Baixe o Reel/TikTok no celular e escolha o arquivo aqui: a IA ouve a fala, lê o texto da tela e tudo entra na busca.'))
+            : null,
+          arquivo),
         h('article', { class: 'detalhe-info' },
           h('div', { class: 'linha-chips' }, h('label', { class: 'chip chip-sel' }, ic(iconeCategoria(s.categoria)), catSel),
             s.verDepois ? h('span', { class: 'chip' }, ic('relogio'), 'Ver depois') : null, s.visto ? h('span', { class: 'chip' }, ic('check'), 'Visto') : null),
@@ -816,7 +905,13 @@ function vistaAjustes(secao) {
         h('div', { class: 'acoes inicio' }, botao('Salvar', { classe: 'btn-pri', onclick: salvarIa }), botao('Testar', { classe: 'btn-sec', onclick: testarIa }),
           h('a', { class: 'btn btn-sec', href: 'https://aistudio.google.com/apikey', target: '_blank', rel: 'noopener noreferrer' }, 'Pegar chave grátis', ic('externo'))),
         status,
-        comErro.length ? botao(`Ler de novo ${comErro.length} com problema`, { icone: 'recarregar', classe: 'btn-sec', onclick: () => comErro.forEach((s) => nuvem.atualizarSalvo(uid, s.id, { status: 'pendente', erro: '', avisoIa: '' })) }) : null),
+        comErro.length ? botao(`Ler de novo ${comErro.length} com problema`, { icone: 'recarregar', classe: 'btn-sec', onclick: () => comErro.forEach((s) => nuvem.atualizarSalvo(uid, s.id, { status: 'pendente', erro: '', avisoIa: '' })) }) : null,
+        est.ajustes.geminiKey && est.salvos.length ? botao('Atualizar todos os salvos com a IA', { icone: 'recarregar', classe: 'btn-sec', onclick: async () => {
+          const prontos = est.salvos.filter((s) => s.status === 'pronto');
+          if (!prontos.length || !(await confirmar(`Ler de novo ${prontos.length} salvos?`, 'Eles ganham minutagem na transcrição e a descrição do que aparece no vídeo. A IA lê um por vez usando a sua chave; notas, pastas e transcrições enviadas por você continuam.'))) return;
+          prontos.forEach((s) => nuvem.atualizarSalvo(uid, s.id, { status: 'pendente', avisoIa: '' }));
+          toast('Lendo de novo em segundo plano.');
+        } }) : null),
       secaoEl('onde', 'Guardar de qualquer lugar',
         h('div', { class: 'grupo' },
           h('div', { class: 'grupo-linha passo' }, ic('baixar', 'azul'), h('div', {}, h('strong', {}, 'Android'), h('p', { class: 'mudo pequeno' }, 'Instale este app (menu do Chrome › Instalar app). Depois, em qualquer post: Compartilhar › Guardei.')),

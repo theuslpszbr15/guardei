@@ -62,13 +62,13 @@ async function comFallback(chave, fazer, preferido) {
 // Partes do salvo que viram vetores. "campo:ini:fim" permite mostrar depois o trecho que bateu.
 export function partesDo(s) {
   const partes = [];
-  const cabeca = [s.categoria, (s.tags || []).join(', '), s.resumo, s.nota, s.autor && `Autor: ${s.autor}`].filter(Boolean).join('. ');
+  const cabeca = [s.categoria, (s.tags || []).join(', '), s.resumo, s.visual && `Visual: ${s.visual}`, s.nota, s.autor && `Autor: ${s.autor}`].filter(Boolean).join('. ');
   partes.push({ ref: 'resumo:0:0', texto: cabeca || s.titulo || s.url });
   for (const campo of ['transcricao', 'legenda', 'textoNaTela']) {
     const t = s[campo] || '';
     for (let ini = 0; ini < t.length && partes.length < MAX_TRECHOS; ini += PASSO) {
       const fim = Math.min(t.length, ini + TRECHO);
-      if (t.slice(ini, fim).trim().length > 40) partes.push({ ref: `${campo}:${ini}:${fim}`, texto: t.slice(ini, fim) });
+      if (t.slice(ini, fim).trim().length > 40) partes.push({ ref: `${campo}:${ini}:${fim}`, texto: semMarcas(t.slice(ini, fim)) });
       if (fim === t.length) break;
     }
   }
@@ -172,61 +172,66 @@ export function rankear(salvos, qv, modelo, { max = 8, piso = 0.3, janela = 0.1 
 }
 
 const NOMES = { transcricao: 'Na transcrição', legenda: 'Na legenda', textoNaTela: 'No texto do vídeo' };
-const finos = new Map();
+const MARCA = /\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]/g;
 
-// Trecho para mostrar no cartão: o pedaço refinado pela IA, ou perto da primeira palavra da busca.
+export const semMarcas = (t = '') => t.replace(MARCA, '').replace(/\s+/g, ' ').trim();
+export const segundos = (m) => (m[3] ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : Number(m[1]) * 60 + Number(m[2]));
+
+// Último [m:ss] antes da posição: o minuto em que o trecho começa a ser falado.
+export function minutoAntes(texto, pos) {
+  let achado = null;
+  for (const m of texto.matchAll(MARCA)) {
+    if (m.index > pos) break;
+    achado = m;
+  }
+  return achado ? { rotulo: achado[0].slice(1, -1), seg: segundos(achado) } : null;
+}
+
+function recorte(texto, pos, onde) {
+  const de = Math.max(0, pos - 60);
+  const corte = semMarcas(texto.slice(de, de + 200));
+  return corte ? { onde, texto: `${de > 0 ? '…' : ''}${corte}…`, minuto: minutoAntes(texto, pos + 1) } : null;
+}
+
+// Trecho para o cartão quando a palavra buscada aparece no campo.
 export function trechoDe(s, ref, q) {
   const [campo, ini, fim] = String(ref || '').split(':');
   if (!NOMES[campo]) return null;
-  const fino = finos.get(`${s.id}|${ref}|${q}`);
-  if (fino) return { onde: NOMES[campo], texto: fino };
-  const texto = (s[campo] || '').slice(Number(ini), Number(fim));
-  const norm = normalizar(texto);
+  const inteiro = s[campo] || '';
+  const norm = normalizar(inteiro.slice(Number(ini), Number(fim)));
   const pos = termos(q).map((t) => norm.indexOf(t.slice(0, Math.max(4, t.length - 2)))).filter((p) => p >= 0).sort((a, b) => a - b)[0];
-  if (pos === undefined) return null;
-  const de = Math.max(0, pos - 60);
-  const corte = texto.slice(de, de + 170).replace(/\s+/g, ' ').trim();
-  return corte ? { onde: NOMES[campo], texto: `${de > 0 ? '…' : ''}${corte}…` } : null;
+  return pos === undefined ? null : recorte(inteiro, Number(ini) + pos, NOMES[campo]);
 }
 
-// Janelas curtas do trecho que bateu, para achar a frase exata do assunto.
-function janelas(texto) {
-  const out = [];
-  for (let i = 0; i < texto.length; i += 150) {
-    out.push([i, texto.slice(i, i + 220)]);
-    if (i + 220 >= texto.length) break;
-  }
-  return out;
+// Texto da parte que bateu (vai para a IA conferir).
+export function textoDaParte(s, ref) {
+  const [campo, ini, fim] = String(ref || '').split(':');
+  return NOMES[campo] ? { onde: NOMES[campo].replace(/^N[ao] /, ''), texto: (s[campo] || '').slice(Number(ini), Number(fim)) } : { onde: '', texto: '' };
 }
 
-// Uma chamada só para os primeiros resultados: compara a pergunta com pedaços de ~220 letras.
-export async function refinarTrechos(chave, modelo, qv, q, itens) {
-  const pendentes = itens.filter((x) => NOMES[String(x.ref).split(':')[0]] && !finos.has(`${x.s.id}|${x.ref}|${q}`)).slice(0, 6);
-  if (!pendentes.length) return false;
-  const pedacos = [];
-  for (const x of pendentes) {
-    const [campo, ini, fim] = x.ref.split(':');
-    const texto = (x.s[campo] || '').slice(Number(ini), Number(fim));
-    for (const [i, t] of janelas(texto).slice(0, 16)) pedacos.push({ x, texto: t, i, inteiro: texto });
+// Acha a citação que a IA devolveu dentro do salvo para mostrar com o minuto certo.
+export function trechoDaCitacao(s, citacao) {
+  const alvo = normalizar(semMarcas(citacao)).slice(0, 40);
+  if (alvo.length < 8) return null;
+  for (const campo of Object.keys(NOMES)) {
+    const inteiro = s[campo] || '';
+    const limpo = normalizar(inteiro);
+    // Procura ignorando as marcas de minuto, mas guardando a posição no texto original.
+    const mapa = [];
+    let plano = '';
+    for (let i = 0; i < limpo.length; i += 1) {
+      if (limpo[i] === '[' && /^\[\d{1,2}:\d{2}(:\d{2})?\]/.test(limpo.slice(i, i + 10))) {
+        i = limpo.indexOf(']', i);
+        continue;
+      }
+      if (/\s/.test(limpo[i]) && plano.endsWith(' ')) continue;
+      plano += /\s/.test(limpo[i]) ? ' ' : limpo[i];
+      mapa.push(i);
+    }
+    const p = plano.indexOf(alvo);
+    if (p >= 0) return { onde: NOMES[campo], texto: `“${semMarcas(citacao)}”`, minuto: minutoAntes(inteiro, mapa[p]) };
   }
-  const vets = await embutir(chave, modelo, pedacos.map((p) => ({ texto: p.texto, titulo: p.x.s.titulo })), false);
-  const melhor = new Map();
-  pedacos.forEach((p, k) => {
-    const v = vets[k] || [];
-    const n = Math.hypot(...v) || 1;
-    let d = 0;
-    for (let j = 0; j < v.length && j < qv.length; j += 1) d += (v[j] / n) * qv[j];
-    if (!melhor.has(p.x) || d > melhor.get(p.x).d) melhor.set(p.x, { d, p });
-  });
-  for (const [x, { p }] of melhor) {
-    const meio = p.i > 0;
-    const corta = p.i + 220 < p.inteiro.length;
-    let c = p.inteiro.slice(p.i, p.i + 220);
-    if (meio) c = c.slice(c.indexOf(' ') + 1);
-    if (corta && c.lastIndexOf(' ') > 0) c = c.slice(0, c.lastIndexOf(' '));
-    finos.set(`${x.s.id}|${x.ref}|${q}`, `${meio ? '…' : ''}${c.replace(/\s+/g, ' ').trim()}${corta ? '…' : ''}`);
-  }
-  return true;
+  return { onde: '', texto: `“${semMarcas(citacao)}”`, minuto: null };
 }
 
 // Indexa em segundo plano, um salvo por vez, sem atrapalhar a leitura dos novos.

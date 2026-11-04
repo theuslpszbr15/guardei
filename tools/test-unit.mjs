@@ -1,10 +1,10 @@
 // Testes rápidos sem navegador: links, busca, conversão do Firestore e ferramentas do MCP (com API falsa).
 import assert from 'node:assert/strict';
 import { deValor, paraValor } from '../js/firestore-rest.js';
-import { conversar, modeloObsoleto, ultimoModelo } from '../js/gemini.js';
+import { conferirBusca, conversar, modeloObsoleto, ultimoModelo } from '../js/gemini.js';
 import { extrairUrl, normalizarUrl, plataformaDe, tipoDe } from '../js/link.js';
 import { buscar, termos } from '../js/search.js';
-import { indexar, modeloDosIndices, partesDo, precisaIndice, rankear, refinarTrechos, trechoDe, vetorDaConsulta } from '../js/semantica.js';
+import { indexar, modeloDosIndices, partesDo, precisaIndice, rankear, semMarcas, textoDaParte, trechoDaCitacao, trechoDe, vetorDaConsulta } from '../js/semantica.js';
 import { criarFerramentas } from '../mcp/tools.mjs';
 import { respostaEmbed } from './embed-falso.mjs';
 
@@ -79,10 +79,14 @@ await ok('busca por assunto: acha pela transcrição sem as mesmas palavras', as
   globalThis.fetch = async (url, op) => {
     pedidos.push(String(url));
     if (String(url).includes('gemini-embedding-2')) return { ok: false, status: 404, json: async () => ({ error: { message: 'models/gemini-embedding-2 is not found' } }) };
+    if (String(url).includes(':generateContent')) {
+      const itens = JSON.parse(op.body).contents[0].parts[0].text.includes('[1] Vídeo da Bia') ? [{ n: 1, motivo: 'Fala de espaguete com limão', trecho: 'raspe a casca do limão siciliano' }] : [];
+      return { ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify({ itens }) }] } }] }) };
+    }
     return { ok: true, status: 200, json: async () => respostaEmbed(JSON.parse(op.body)) };
   };
   try {
-    const longa = `${'Bom dia, pessoal. '.repeat(200)}Agora o segredo: raspe a casca do limão siciliano por cima do espaguete. ${'Valeu! '.repeat(100)}`;
+    const longa = `${'[0:00] Bom dia, pessoal. '.repeat(100)}[3:10] Agora o segredo: raspe a casca do limão siciliano por cima do espaguete. ${'[4:00] Valeu! '.repeat(60)}`;
     const docs = [
       { id: 'a', status: 'pronto', titulo: 'Vídeo da Bia', resumo: 'Bate-papo da semana', transcricao: longa, atualizadoEm: 1 },
       { id: 'b', status: 'pronto', titulo: 'Fim de semana', resumo: 'Roteiro por Lisboa e Belém', atualizadoEm: 1 },
@@ -100,11 +104,16 @@ await ok('busca por assunto: acha pela transcrição sem as mesmas palavras', as
     const r = rankear(docs, qv, 'gemini-embedding-001');
     assert.deepEqual(r.map((x) => x.s.id), ['a']);
     const t0 = trechoDe(docs[0], r[0].ref, 'macarrão cítrico');
-    assert.equal(t0, null, 'sem palavra igual, só mostra trecho depois de refinar');
-    assert.equal(await refinarTrechos('x', 'gemini-embedding-001', qv, 'macarrão cítrico', r), true);
-    const t = trechoDe(docs[0], r[0].ref, 'macarrão cítrico');
+    assert.equal(t0, null, 'sem palavra igual não inventa trecho');
+    const candidatos = rankear(docs, qv, 'gemini-embedding-001', { piso: 0.15, janela: 0.35 }).map((x) => ({ ...x, ...textoDaParte(x.s, x.ref) }));
+    const conferidos = await conferirBusca({ chave: 'x', modelo: 'gemini-3.6-flash' }, 'macarrão cítrico', candidatos);
+    assert.deepEqual(conferidos.map((x) => x.s.id), ['a']);
+    const t = trechoDaCitacao(docs[0], conferidos[0].citacao);
     assert.equal(t.onde, 'Na transcrição');
+    assert.equal(t.minuto.rotulo, '3:10');
+    assert.equal(t.minuto.seg, 190);
     assert.match(t.texto, /limão siciliano/);
+    assert.equal(semMarcas('[0:01] oi [1:02:03] tchau'), 'oi tchau');
     docs[0].resumo = 'mudou';
     docs[0].atualizadoEm = 2;
     assert.equal(precisaIndice(docs[0]), true, 'texto mudou: refaz o índice');

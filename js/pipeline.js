@@ -46,6 +46,8 @@ export async function processar(uid, salvo, ia) {
     if (ia?.chave) {
       try {
         extra = await enriquecer(ia, { ...salvo, ...base });
+        // Transcrição feita a partir do vídeo enviado vale mais que a lida pelo link.
+        if (salvo.transcricaoManual) for (const k of ['transcricao', 'textoNaTela', 'visual']) if (salvo[k]) delete extra[k];
       } catch (e) {
         extra = { avisoIa: String(e.message || e).slice(0, 200) };
       }

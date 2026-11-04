@@ -1,7 +1,7 @@
 // Teste ponta a ponta no Chrome headless: conta temporária no Firebase real, IA e metadados simulados.
 // Uso: node tools/smoke.mjs   (gera capturas em tools/out/)
 import { spawn } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { APP_ID, emailDe, firebaseConfig } from '../js/config.js';
 import { apagarConta, cadastrar, cliente, login } from '../js/firestore-rest.js';
@@ -35,6 +35,17 @@ function responder(req) {
     const corpo = req.postData() || '';
     if (url.includes(':batchEmbedContents')) return json(respostaEmbed(JSON.parse(corpo)));
     let texto;
+    if (corpo.includes('A pessoa procurou nos salvos')) {
+      // Conferência da busca: aprova só os candidatos de receita.
+      const pedido = JSON.parse(corpo).contents[0].parts.map((p) => p.text || '').join('');
+      const blocos = pedido.split(/\n(?=\[\d+\] )/).filter((b) => /^\[\d+\] /.test(b));
+      const itens = blocos.filter((b) => /Receita/.test(b)).map((b) => ({ n: Number(b.match(/^\[(\d+)\]/)[1]), motivo: 'Fala de massa com limão', trecho: '' }));
+      return json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ itens }) }] } }] });
+    }
+    if (corpo.includes('Este é o vídeo de um post salvo')) {
+      const r = { transcricao: '[0:00] Oi gente [0:07] Hoje é linguine com limão', textoNaTela: 'LINGUINE CREMOSO', visual: 'Cozinha clara com panela azul', resumo: 'Linguine cremoso com limão.', tags: ['linguine'] };
+      return json({ candidates: [{ content: { parts: [{ text: JSON.stringify(r) }] } }] });
+    }
     if (corpo.includes('Responda SOMENTE um JSON')) {
       const chave = Object.keys(CONTEUDO).find((k) => corpo.includes(k));
       texto = `\`\`\`json\n${JSON.stringify(CONTEUDO[chave] || { titulo: 'Outro', resumo: '', categoria: 'Outro' })}\n\`\`\``;
@@ -191,7 +202,12 @@ try {
   assert(await p.evaluate(() => document.body.innerText.includes('Pelo assunto')), 'título da seção por assunto');
   await foto(p, '03b-busca-assunto');
   await p.$eval('.busca input', (i) => { i.value = ''; i.dispatchEvent(new Event('input')); });
-  passo('busca por assunto com IA acha sem as mesmas palavras');
+  // Parecido pelos vetores, mas a IA confere e descarta: não mostra coisa sem nada a ver.
+  await p.type('.busca input', 'europa');
+  await esperarTexto(p, 'Nem por palavra nem pelo assunto', 25000);
+  assert((await p.$$eval('.card', (c) => c.length)) === 0, 'busca sem relação não deveria mostrar cartões');
+  await p.$eval('.busca input', (i) => { i.value = ''; i.dispatchEvent(new Event('input')); });
+  passo('busca por assunto com IA acha sem as mesmas palavras e descarta o que não tem a ver');
 
   // 8. Detalhe
   await p.evaluate(() => [...document.querySelectorAll('.card')].find((c) => c.innerText.includes('Espaguete')).querySelector('a').click());
@@ -207,6 +223,24 @@ try {
   await clicarTexto(p, '.abas-seg button', 'Resumo');
   await foto(p, '04-detalhe');
   passo('detalhe com resumo, transcrição, categoria e nota');
+
+  // 8b. Vídeo do Reel enviado do aparelho: a IA transcreve com minutagem
+  const abrirCard = async (t) => {
+    await p.goto(`${BASE}#/salvos`);
+    await p.waitForFunction((t) => [...document.querySelectorAll('.card')].some((c) => c.innerText.includes(t)), {}, t);
+    await p.evaluate((t) => [...document.querySelectorAll('.card')].find((c) => c.innerText.includes(t)).querySelector('a').click(), t);
+    await p.waitForSelector('.detalhe-titulo');
+  };
+  await abrirCard('Linguine');
+  writeFileSync('tools/out/video-teste.mp4', Buffer.from('00000018667479706d703432', 'hex'));
+  await esperarTexto(p, 'Transcrever o vídeo');
+  const arquivoIn = await p.$('.detalhe input[type=file]');
+  await arquivoIn.uploadFile('tools/out/video-teste.mp4');
+  await esperarTexto(p, 'Transcrição adicionada');
+  await p.waitForFunction(() => [...document.querySelectorAll('.minuto')].some((m) => m.textContent === '0:07'), { timeout: 15000 });
+  await foto(p, '04b-transcricao-video');
+  await abrirCard('Espaguete');
+  passo('transcreve o vídeo enviado do aparelho, com minutagem');
 
   // 9. Pasta a partir do detalhe
   await clicarTexto(p, 'button', 'Adicionar à pasta');

@@ -71,6 +71,9 @@ export function lerJson(texto) {
 }
 
 const texto = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+const listaTags = (v) => (Array.isArray(v) ? v.filter((t) => typeof t === 'string').slice(0, 8).map((t) => t.toLowerCase().slice(0, 30)) : []);
+const PEDIDO_TRANSCRICAO = 'transcrição da fala, no idioma falado, com a minutagem [m:ss] no começo de cada frase ou trecho (ex.: \\"[0:00] Oi gente... [0:12] Agora...\\")';
+const PEDIDO_VISUAL = 'o que aparece visualmente: lugar, cores, pessoas, objetos, comida, roupas (1 a 3 frases)';
 
 // Vídeo do YouTube vai direto como vídeo (o Gemini assiste e transcreve); o resto é lido pela ferramenta url_context.
 export async function enriquecer({ chave, modelo }, salvo) {
@@ -81,15 +84,17 @@ Plataforma: ${salvo.plataforma} (${salvo.tipo})
 Título original: ${salvo.tituloOriginal || '(desconhecido)'}
 Autor: ${salvo.autor || '(desconhecido)'}
 Legenda/descrição conhecida: ${(salvo.legenda || '').slice(0, 3000) || '(nenhuma)'}
+${salvo.capa ? `Imagem de capa: ${salvo.capa}` : ''}
 
-${youtube ? 'Assista ao vídeo anexado.' : 'Abra o link para ler o conteúdo, se conseguir.'}
+${youtube ? 'Assista ao vídeo anexado.' : 'Abra o link (e a imagem de capa) para ler o conteúdo, se conseguir.'}
 Responda SOMENTE um JSON com:
 {"titulo": "título curto e descritivo em português, até 70 caracteres, do que a pessoa vai querer lembrar (ex.: \\"Espaguete ao limão siciliano\\")",
  "resumo": "2 a 4 frases em português dizendo o que é e o que tem de útil (ingredientes, lugares, passos, nomes)",
  "categoria": "uma de: ${CATEGORIAS.join(', ')}",
  "legenda": "texto/legenda original do post, se encontrar (pode ficar vazio)",
- "transcricao": "${youtube ? 'transcrição da fala do vídeo, no idioma falado' : 'transcrição da fala, se houver vídeo acessível; senão vazio'}",
+ "transcricao": "${youtube ? PEDIDO_TRANSCRICAO : `${PEDIDO_TRANSCRICAO}, se houver vídeo acessível; senão vazio`}",
  "textoNaTela": "textos que aparecem escritos nas imagens/vídeo, se houver",
+ "visual": "${PEDIDO_VISUAL}; vazio se não der para ver",
  "tags": ["3 a 6 palavras-chave em português, minúsculas"]}
 Se não conseguir abrir o link, use só as informações acima e não invente detalhes.`;
 
@@ -111,8 +116,41 @@ Se não conseguir abrir o link, use só as informações acima e não invente de
     legenda: texto(j.legenda, 6000),
     transcricao: texto(j.transcricao, 40000),
     textoNaTela: texto(j.textoNaTela, 6000),
-    tags: Array.isArray(j.tags) ? j.tags.filter((t) => typeof t === 'string').slice(0, 8).map((t) => t.toLowerCase().slice(0, 30)) : [],
+    visual: texto(j.visual, 800),
+    tags: listaTags(j.tags),
   };
+}
+
+// Vídeo enviado do aparelho (Reels/TikTok baixados): o Gemini ouve, lê a tela e descreve o que aparece.
+export async function transcreverVideo({ chave, modelo }, salvo, { base64, mime }) {
+  const pedido = `Este é o vídeo de um post salvo: "${salvo.titulo || salvo.url}".
+Responda SOMENTE um JSON com:
+{"transcricao": "${PEDIDO_TRANSCRICAO}; vazio se não houver fala",
+ "textoNaTela": "textos escritos que aparecem no vídeo",
+ "visual": "${PEDIDO_VISUAL}",
+ "resumo": "2 a 4 frases em português dizendo o que é e o que tem de útil",
+ "tags": ["3 a 6 palavras-chave em português, minúsculas"]}`;
+  const bruto = await gerar({ chave, modelo, partes: [{ inlineData: { mimeType: mime || 'video/mp4', data: base64 } }, { text: pedido }] });
+  const j = lerJson(bruto);
+  return { transcricao: texto(j.transcricao, 40000), textoNaTela: texto(j.textoNaTela, 6000), visual: texto(j.visual, 800), resumo: texto(j.resumo, 1200), tags: listaTags(j.tags) };
+}
+
+// Confere os candidatos da busca por assunto: só fica o que realmente fala do que a pessoa procurou.
+export async function conferirBusca({ chave, modelo }, consulta, candidatos) {
+  const lista = candidatos.map((c, i) => `[${i + 1}] ${c.s.titulo || c.s.url} — ${c.s.categoria || ''} — ${c.s.autor || ''}
+Resumo: ${(c.s.resumo || c.s.legenda || '').slice(0, 400)}
+${c.s.visual ? `Visual: ${c.s.visual.slice(0, 300)}\n` : ''}${c.texto ? `Trecho (${c.onde}): ${c.texto.slice(0, 1400)}` : ''}`).join('\n\n');
+  const pedido = `A pessoa procurou nos salvos dela: "${consulta}"
+
+Candidatos:
+${lista}
+
+Responda SOMENTE um JSON {"itens": [{"n": número, "motivo": "frase curta em português dizendo por que tem a ver", "trecho": "citação exata e curta (até 160 caracteres) do trecho onde fala disso, ou vazio"}]}
+com SOMENTE os candidatos que realmente têm a ver com a busca, do mais ao menos relevante. Se nenhum tiver, responda {"itens": []}.`;
+  const j = lerJson(await gerar({ chave, modelo, partes: [{ text: pedido }], temperatura: 0 }));
+  return (Array.isArray(j.itens) ? j.itens : [])
+    .filter((x) => Number.isInteger(x?.n) && candidatos[x.n - 1])
+    .map((x) => ({ ...candidatos[x.n - 1], motivo: texto(x.motivo, 200), citacao: texto(x.trecho, 240) }));
 }
 
 // Chat: manda os salvos mais parecidos com a pergunta como contexto numerado [1], [2]...

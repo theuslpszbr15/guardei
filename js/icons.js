@@ -34,6 +34,7 @@ const P = {
   editar: '<path d="M7 7H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-1"/><path d="M20.4 6.6a2.1 2.1 0 0 0-3-3L9 12v3h3zM16 5l3 3"/>',
   foto: '<path d="M15 8h.01M3 6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z"/><path d="m3 16 5-5c.9-.9 2.1-.9 3 0l5 5"/><path d="m14 14 1-1c.9-.9 2.1-.9 3 0l3 3"/>',
   caixa: '<path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M4 13h3l3 3h4l3-3h3"/>',
+  microfone: '<path d="M9 5a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0zM5 10a7 7 0 0 0 14 0M8 21h8M12 17v4"/>',
   'cat-Receita': '<path d="M19 3v12h-5c0-3.7.2-7.4 5-12zm0 12v6h-1v-3M8 4v17M5 4v3a3 3 0 1 0 6 0V4"/>',
   'cat-Lugar': '<circle cx="12" cy="11" r="3"/><path d="m17.7 16.7-4.3 4.2a2 2 0 0 1-2.8 0l-4.3-4.2a8 8 0 1 1 11.4 0z"/>',
   'cat-Restaurante': '<path d="M3 21h18M3 7v1a3 3 0 0 0 6 0V7m0 1a3 3 0 0 0 6 0V7m0 1a3 3 0 0 0 6 0V7H3l2-4h14l2 4M5 21V10.9M19 21V10.9M9 21v-4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4"/>',

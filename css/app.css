@@ -177,6 +177,13 @@ select.filtro { appearance: none; padding-right: 32px; background-image: url("da
 .grade-nota a { color: var(--azul); }
 .card-trecho { font-size: 12px; line-height: 1.35; opacity: .9; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .card-trecho b { font-weight: 600; }
+.card-motivo { font-size: 12px; line-height: 1.35; font-weight: 500; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.btn-mic { flex: none; width: 32px; height: 32px; margin-right: -6px; border: 0; border-radius: 999px; background: none; color: var(--mudo); display: grid; place-items: center; cursor: pointer; }
+.btn-mic:hover { color: var(--txt); }
+.btn-mic.ouvindo { color: #fff; background: var(--perigo); }
+.minuto { display: inline-block; margin: 0 4px 0 2px; padding: 0 6px; border-radius: 6px; background: var(--fill); color: var(--azul); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; text-decoration: none; }
+span.minuto { color: var(--mudo); }
+.enviar-video { display: grid; gap: 6px; margin-top: 10px; }
 .card { position: relative; border-radius: 12px; overflow: hidden; background: var(--muted); aspect-ratio: 9 / 16; }
 .card-link { display: block; position: absolute; inset: 0; text-decoration: none; color: inherit; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; transition: opacity .18s, scale .18s var(--ease); }
 .card-link:active { opacity: .85; scale: .98; }
@@ -248,7 +255,7 @@ select.filtro { appearance: none; padding-right: 32px; background-image: url("da
 .nota { width: 100%; border-radius: 12px; border: 0; background: var(--card); padding: 14px 16px; resize: vertical; min-height: 84px; font-size: 16px; outline: none; }
 .aviso { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 10px 12px 10px 14px; border-radius: 12px; background: var(--card); font-size: 14px; }
 .aviso.erro { color: var(--perigo); }
-.abas-seg { display: grid; grid-template-columns: repeat(4, 1fr); padding: 2px; border-radius: 9px; background: var(--fill); gap: 0; }
+.abas-seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); padding: 2px; border-radius: 9px; background: var(--fill); gap: 0; }
 .abas-seg button { height: 32px; border-radius: 7px; border: 0; background: none; color: var(--txt); font-weight: 500; font-size: 13px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .abas-seg button[aria-selected="true"] { background: var(--card-2); font-weight: 600; box-shadow: 0 3px 8px rgb(0 0 0 / 12%), 0 3px 1px rgb(0 0 0 / 4%); }
 .painel { margin-top: 10px; padding: 14px 16px 18px; border-radius: 12px; background: var(--card); }

@@ -11,7 +11,7 @@ export function termos(consulta) {
 }
 
 const PESOS = [
-  ['titulo', 6], ['categoria', 4], ['resumo', 3], ['nota', 3], ['autor', 3], ['legenda', 2], ['textoNaTela', 1.5], ['transcricao', 1],
+  ['titulo', 6], ['categoria', 4], ['resumo', 3], ['nota', 3], ['autor', 3], ['legenda', 2], ['textoNaTela', 1.5], ['visual', 1.5], ['transcricao', 1],
 ];
 
 // Plural/singular simples: "receitas" acha "receita" e vice-versa.
