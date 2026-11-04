@@ -172,6 +172,11 @@ select.filtro { appearance: none; padding-right: 32px; background-image: url("da
 
 /* ---------- Cartões (desktop: grade 9:16 com texto sobre a imagem) ---------- */
 .grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+.grade-titulo { grid-column: 1 / -1; margin: 14px 0 0; font-size: 17px; font-weight: 600; }
+.grade-nota { grid-column: 1 / -1; margin-top: 8px; }
+.grade-nota a { color: var(--azul); }
+.card-trecho { font-size: 12px; line-height: 1.35; opacity: .9; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.card-trecho b { font-weight: 600; }
 .card { position: relative; border-radius: 12px; overflow: hidden; background: var(--muted); aspect-ratio: 9 / 16; }
 .card-link { display: block; position: absolute; inset: 0; text-decoration: none; color: inherit; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; transition: opacity .18s, scale .18s var(--ease); }
 .card-link:active { opacity: .85; scale: .98; }
@@ -415,6 +420,8 @@ main.com-mapa { padding-bottom: 20px; }
   .card-corpo { position: static; padding: 0; color: var(--txt); gap: 3px; }
   .card-titulo { order: 0; font-size: 16px; }
   .card-meta { color: var(--mudo); font-size: 13px; }
+  .card-trecho { color: var(--mudo); font-size: 13px; opacity: 1; }
+  .grade-titulo { margin-top: 18px; }
   .card-cat { display: inline-flex !important; align-self: flex-start; height: 22px; margin-top: 2px; font-size: 13px; padding: 0 7px; }
   .card.visto .capa { opacity: .6; }
   .card.sel { outline: none; }

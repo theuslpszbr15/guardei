@@ -1,8 +1,8 @@
 // Cache do app para abrir offline. Com internet, sempre busca a versão nova (rede primeiro).
-const VERSAO = 'guardei-v10';
+const VERSAO = 'guardei-v11';
 const ARQUIVOS = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
-  'js/app.js', 'js/cloud.js', 'js/config.js', 'js/gemini.js', 'js/icons.js', 'js/link.js', 'js/mapa.js', 'js/pipeline.js', 'js/qr.js', 'js/search.js', 'js/ui.js',
+  'js/app.js', 'js/cloud.js', 'js/config.js', 'js/gemini.js', 'js/icons.js', 'js/link.js', 'js/mapa.js', 'js/pipeline.js', 'js/qr.js', 'js/search.js', 'js/semantica.js', 'js/ui.js',
   'vendor/firebase/firebase-app.js', 'vendor/firebase/firebase-auth.js', 'vendor/firebase/firebase-firestore.js', 'vendor/qrcode.mjs',
   'vendor/three.module.min.js', 'vendor/three.core.min.js', 'vendor/OrbitControls.js',
   'icons/icon.svg', 'icons/marca.svg', 'icons/icon-192.png',

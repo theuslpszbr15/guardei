@@ -6,7 +6,8 @@ import { iconeCategoria } from './icons.js';
 import { extrairUrl, nomePlataforma, normalizarUrl, plataformaDe, tipoDe } from './link.js';
 import { criarFila } from './pipeline.js';
 import { qrSvg } from './qr.js';
-import { buscar } from './search.js';
+import { buscar, normalizar, termos } from './search.js';
+import { criarIndexador, modeloDosIndices, rankear, refinarTrechos, trechoDe, vetorDaConsulta } from './semantica.js';
 import { botao, confirmar, copiar, dia, folha, h, ic, menu, toast } from './ui.js';
 
 const raiz = document.getElementById('app');
@@ -345,6 +346,36 @@ function vistaSalvos({ pastaId, busca: modoBusca = false } = {}) {
   cat.onchange = () => { est.categoria = cat.value; desenhar(); };
   selBtn.onclick = () => { est.selecao = est.selecao ? null : new Set(); desenhar(); };
 
+  // Busca pelo assunto (IA): pede o vetor da pergunta uma vez por texto, com uma pequena espera ao digitar.
+  const sem = { q: '', qv: null, modelo: '', estado: '', t: 0 };
+  function pedirSemantica(q) {
+    if (!ia() || q.length < 3) { sem.q = ''; sem.estado = ''; return; }
+    if (sem.q === q) return;
+    Object.assign(sem, { q, qv: null, estado: 'buscando' });
+    clearTimeout(sem.t);
+    sem.t = setTimeout(async () => {
+      const modelo = modeloDosIndices(est.salvos);
+      if (!modelo) { sem.estado = 'sem-indice'; desenhar(); return; }
+      try {
+        const qv = await vetorDaConsulta(ia().chave, q, modelo);
+        if (sem.q === q) Object.assign(sem, { qv, modelo, estado: 'ok' });
+      } catch {
+        if (sem.q === q) sem.estado = 'erro';
+      }
+      if (sem.q === q) desenhar();
+    }, 450);
+  }
+
+  // Mostra de onde veio o resultado quando a palavra só aparece na transcrição/legenda.
+  function trechoPorPalavra(s, q) {
+    const ts = termos(q).map((t) => (t.length > 4 ? t.slice(0, -1) : t));
+    if (!ts.length || ts.some((t) => normalizar(`${s.titulo} ${s.resumo} ${s.categoria} ${(s.tags || []).join(' ')}`).includes(t))) return null;
+    for (const campo of ['transcricao', 'legenda', 'textoNaTela']) {
+      if (ts.some((t) => normalizar(s[campo]).includes(t))) return trechoDe(s, `${campo}:0:${(s[campo] || '').length}`, q);
+    }
+    return null;
+  }
+
   const topoCel = pasta
     ? topoCelular(botao('', { icone: 'voltar', classe: 'btn-redondo', titulo: 'Voltar para pastas', onclick: () => { location.hash = '#/pastas'; } }),
       btnPilula('menu', 'Ações da pasta', (e) => acoesPasta(e.currentTarget)))
@@ -385,22 +416,44 @@ function vistaSalvos({ pastaId, busca: modoBusca = false } = {}) {
     let lista = base;
     if (est.verDepois) lista = lista.filter((s) => s.verDepois);
     if (est.categoria) lista = lista.filter((s) => s.categoria === est.categoria);
+    const filtrada = lista;
     lista = buscar(lista, est.q);
+    const q = est.q.trim();
+    pedirSemantica(q);
+    const porAssunto = sem.qv && sem.q === q
+      ? rankear(filtrada.filter((s) => !lista.includes(s)), sem.qv, sem.modelo)
+      : [];
+    if (porAssunto.length && sem.refinado !== q) {
+      sem.refinado = q;
+      refinarTrechos(ia().chave, sem.modelo, sem.qv, q, porAssunto).then((mudou) => { if (mudou && sem.q === q) desenhar(); }).catch(() => {});
+    }
+    const faltam = est.indexador?.faltam() || 0;
+    const nota = !q || est.selecao ? null
+      : !ia() ? h('p', { class: 'grade-nota mudo pequeno' }, 'Para achar também pelo assunto (o que foi falado no vídeo), ', h('a', { href: '#/ajustes/gemini' }, 'conecte o Gemini'), '.')
+        : sem.estado === 'buscando' ? h('p', { class: 'grade-nota mudo pequeno' }, 'Procurando também pelo assunto…')
+          : sem.estado === 'erro' ? h('p', { class: 'grade-nota mudo pequeno' }, 'A busca por assunto falhou agora. A busca por palavras continua funcionando.')
+            : faltam ? h('p', { class: 'grade-nota mudo pequeno' }, `Preparando ${faltam} salvo${faltam > 1 ? 's' : ''} para a busca por assunto…`)
+              : null;
     contagem.textContent = base.length === 1 ? '1 salvo' : `${base.length} salvos`;
     grade.classList.toggle('selecionando', !!est.selecao);
 
     if (!est.carregado) {
       grade.replaceChildren(...Array.from({ length: 6 }, () => h('div', { class: 'card esqueleto' })));
-    } else if (!lista.length) {
+    } else if (!lista.length && !porAssunto.length && !(q && sem.estado === 'buscando')) {
       grade.replaceChildren(h('div', { class: 'vazio-estado' },
         h('strong', {}, base.length ? 'Nada encontrado' : pasta ? 'Pasta vazia' : 'Nada guardado ainda'),
         h('p', { class: 'mudo' }, base.length ? 'Tente outras palavras ou limpe os filtros.'
           : pasta ? 'Use “Adicionar à pasta” em qualquer salvo.' : 'Compartilhe um post com o Guardei pelo celular ou cole um link aqui.'),
         !base.length && !pasta ? h('p', { class: 'mudo pequeno' }, `Conta: ${usuarioDe(est.user.email)}. Guardou em outro aparelho? Confira se entrou com a mesma conta.`) : null,
         base.length && (est.q || est.categoria || est.verDepois) ? botao('Limpar filtros', { classe: 'btn-sec', onclick: () => { est.q = ''; est.categoria = ''; est.verDepois = false; rotear(); } }) : null,
-        !base.length && !pasta ? botao('Adicionar link', { icone: 'mais', classe: 'btn-pri', onclick: folhaAdicionar }) : null));
+        !base.length && !pasta ? botao('Adicionar link', { icone: 'mais', classe: 'btn-pri', onclick: folhaAdicionar }) : null),
+        nota);
     } else {
-      grade.replaceChildren(...lista.map(cartao));
+      grade.replaceChildren(
+        ...lista.map((s) => cartao(s, q ? trechoPorPalavra(s, q) : null)),
+        ...(porAssunto.length ? [h('h2', { class: 'grade-titulo' }, lista.length ? 'Também pode ser, pelo assunto' : 'Pelo assunto')] : []),
+        ...porAssunto.map((x) => cartao(x.s, trechoDe(x.s, x.ref, q), true)),
+        ...(nota ? [nota] : []));
     }
 
     barraSel.hidden = !est.selecao;
@@ -412,7 +465,7 @@ function vistaSalvos({ pastaId, busca: modoBusca = false } = {}) {
     }
   }
 
-  function cartao(s) {
+  function cartao(s, trecho = null, porAssunto = false) {
     const lendo = s.status === 'pendente' || s.status === 'lendo';
     const sel = est.selecao?.has(s.id);
     const titulo = lendo ? 'Lendo este…' : s.status === 'erro' ? 'Não consegui ler este link' : s.titulo || s.tituloOriginal || s.url;
@@ -424,6 +477,7 @@ function vistaSalvos({ pastaId, busca: modoBusca = false } = {}) {
           s.verDepois ? h('span', { class: 'marca-relogio', title: 'Ver depois' }, ic('relogio')) : null,
           h('time', { datetime: new Date(s.criadoEm).toISOString() }, dia(s.criadoEm))),
         h('span', { class: `card-titulo${lendo ? ' lendo' : ''}` }, titulo),
+        trecho ? h('span', { class: 'card-trecho' }, h('b', {}, `${trecho.onde}: `), trecho.texto) : null,
         s.categoria ? chipCategoria(s.categoria, 'card-cat') : null),
       est.selecao ? h('span', { class: `marcador${sel ? ' on' : ''}`, 'aria-hidden': 'true' }, ic('check')) : null,
     ];
@@ -433,7 +487,7 @@ function vistaSalvos({ pastaId, busca: modoBusca = false } = {}) {
         desenhar();
       } }, corpo)
       : h('a', { class: 'card-link', href: `#/salvo/${s.id}` }, corpo);
-    return h('article', { class: `card${s.visto ? ' visto' : ''}${sel ? ' sel' : ''}`, dataset: { id: s.id } }, link,
+    return h('article', { class: `card${s.visto ? ' visto' : ''}${sel ? ' sel' : ''}${porAssunto ? ' por-assunto' : ''}`, dataset: { id: s.id } }, link,
       est.selecao ? null : botao('', { icone: 'menu', classe: 'card-menu', titulo: 'Ações do item', onclick: (e) => menu(e.currentTarget, acoesDoSalvo(s)) }));
   }
 
@@ -670,6 +724,15 @@ function vistaChat() {
     desenhar();
     const prontos = est.salvos.filter((s) => s.status === 'pronto');
     let contexto = buscar(prontos, texto, 12);
+    // Junta os parecidos pelo assunto: a pergunta raramente usa as mesmas palavras do vídeo.
+    const modelo = modeloDosIndices(prontos);
+    if (modelo) {
+      try {
+        const qv = await vetorDaConsulta(ia().chave, texto, modelo);
+        const extras = rankear(prontos, qv, modelo, { max: 10, janela: 0.15 }).map((x) => x.s).filter((s) => !contexto.includes(s));
+        contexto = [...contexto.slice(0, 8), ...extras, ...contexto.slice(8)].slice(0, 16);
+      } catch { /* segue só com a busca por palavras */ }
+    }
     if (contexto.length < 3) contexto = [...contexto, ...prontos.filter((s) => !contexto.includes(s))].slice(0, 25);
     try {
       const resposta = await conversar(ia(), est.chat.slice(-8), contexto);
@@ -803,10 +866,12 @@ async function iniciar(user) {
   nuvem.aoErro((e) => toast(e.code === 'permission-denied' ? 'Sem permissão para salvar. Entre de novo.' : 'Não consegui salvar na nuvem. Tente de novo.'));
   montarCasca();
   const fila = criarFila(user.uid, ia);
+  est.indexador = criarIndexador(() => est.ajustes.geminiKey, (id, indice) => nuvem.guardarIndice(user.uid, id, indice));
   let primeira = true;
   let esperaNuvem = 0;
   nuvem.ouvirAjustes(user.uid, (a) => {
     est.ajustes = a;
+    est.indexador.entrada(est.salvos);
     if (est.carregado && /^#\/(ajustes|chat|pastas)/.test(location.hash) && !principal.contains(document.activeElement)) rotear();
   });
   nuvem.ouvirPastas(user.uid, (p) => { est.pastas = p; if (est.carregado) atualizar(); });
@@ -821,6 +886,7 @@ async function iniciar(user) {
     clearTimeout(esperaNuvem);
     est.carregado = true;
     fila(s);
+    est.indexador.entrada(s);
     if (primeira) {
       primeira = false;
       rotear();

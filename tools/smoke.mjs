@@ -7,6 +7,7 @@ import { APP_ID, emailDe, firebaseConfig } from '../js/config.js';
 import { apagarConta, cadastrar, cliente, login } from '../js/firestore-rest.js';
 import { criarFerramentas } from '../mcp/tools.mjs';
 import { chromePath, puppeteerPath } from './browser.mjs';
+import { respostaEmbed } from './embed-falso.mjs';
 
 const puppeteer = createRequire(import.meta.url)(puppeteerPath);
 const PORTA = 5181;
@@ -32,6 +33,7 @@ function responder(req) {
   if (url.includes('generativelanguage.googleapis.com')) {
     if (req.method() === 'OPTIONS') return req.respond({ status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': 'POST' } });
     const corpo = req.postData() || '';
+    if (url.includes(':batchEmbedContents')) return json(respostaEmbed(JSON.parse(corpo)));
     let texto;
     if (corpo.includes('Responda SOMENTE um JSON')) {
       const chave = Object.keys(CONTEUDO).find((k) => corpo.includes(k));
@@ -182,6 +184,14 @@ try {
   await p.waitForFunction(() => document.querySelectorAll('.card').length === 1);
   await p.select('select[aria-label=Categoria]', '');
   passo('busca do jeito que lembra e filtra por categoria');
+
+  // 7b. Busca por assunto (IA): nenhuma palavra igual, mas o assunto é o mesmo
+  await p.type('.busca input', 'macarrão cítrico');
+  await p.waitForFunction(() => document.querySelectorAll('.card.por-assunto').length === 2, { timeout: 25000 });
+  assert(await p.evaluate(() => document.body.innerText.includes('Pelo assunto')), 'título da seção por assunto');
+  await foto(p, '03b-busca-assunto');
+  await p.$eval('.busca input', (i) => { i.value = ''; i.dispatchEvent(new Event('input')); });
+  passo('busca por assunto com IA acha sem as mesmas palavras');
 
   // 8. Detalhe
   await p.evaluate(() => [...document.querySelectorAll('.card')].find((c) => c.innerText.includes('Espaguete')).querySelector('a').click());

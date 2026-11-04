@@ -4,7 +4,9 @@ import { deValor, paraValor } from '../js/firestore-rest.js';
 import { conversar, modeloObsoleto, ultimoModelo } from '../js/gemini.js';
 import { extrairUrl, normalizarUrl, plataformaDe, tipoDe } from '../js/link.js';
 import { buscar, termos } from '../js/search.js';
+import { indexar, modeloDosIndices, partesDo, precisaIndice, rankear, refinarTrechos, trechoDe, vetorDaConsulta } from '../js/semantica.js';
 import { criarFerramentas } from '../mcp/tools.mjs';
+import { respostaEmbed } from './embed-falso.mjs';
 
 let n = 0;
 const ok = (nome, fn) => Promise.resolve(fn()).then(() => { n += 1; console.log(`  ok  ${nome}`); });
@@ -66,6 +68,46 @@ await ok('Gemini: troca sozinho de modelo quando o Google desativa o antigo', as
     assert.ok(!pedidos.some((u) => u.includes('gemini-2.5')), 'não deveria nem tentar o 2.5');
     globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ error: { message: 'API key not valid.' } }) });
     await assert.rejects(conversar({ chave: 'x' }, [{ de: 'eu', texto: 'oi' }], []), /API key not valid/);
+  } finally {
+    globalThis.fetch = fetchOriginal;
+  }
+});
+
+await ok('busca por assunto: acha pela transcrição sem as mesmas palavras', async () => {
+  const fetchOriginal = globalThis.fetch;
+  const pedidos = [];
+  globalThis.fetch = async (url, op) => {
+    pedidos.push(String(url));
+    if (String(url).includes('gemini-embedding-2')) return { ok: false, status: 404, json: async () => ({ error: { message: 'models/gemini-embedding-2 is not found' } }) };
+    return { ok: true, status: 200, json: async () => respostaEmbed(JSON.parse(op.body)) };
+  };
+  try {
+    const longa = `${'Bom dia, pessoal. '.repeat(200)}Agora o segredo: raspe a casca do limão siciliano por cima do espaguete. ${'Valeu! '.repeat(100)}`;
+    const docs = [
+      { id: 'a', status: 'pronto', titulo: 'Vídeo da Bia', resumo: 'Bate-papo da semana', transcricao: longa, atualizadoEm: 1 },
+      { id: 'b', status: 'pronto', titulo: 'Fim de semana', resumo: 'Roteiro por Lisboa e Belém', atualizadoEm: 1 },
+      { id: 'c', status: 'pendente', titulo: 'Lendo', atualizadoEm: 1 },
+    ];
+    assert.ok(partesDo(docs[0]).length > 2, 'transcrição longa vira vários trechos');
+    assert.equal(precisaIndice(docs[0]), true);
+    assert.equal(precisaIndice(docs[2]), false);
+    for (const d of docs.slice(0, 2)) d.indice = await indexar('x', d);
+    assert.equal(docs[0].indice.modelo, 'gemini-embedding-001', 'cai para o modelo antigo se o novo não existir');
+    assert.equal(precisaIndice(docs[0]), false);
+    assert.equal(modeloDosIndices(docs), 'gemini-embedding-001');
+    assert.equal(buscar(docs, 'macarrão cítrico').length, 0, 'por palavra não acha');
+    const qv = await vetorDaConsulta('x', 'macarrão cítrico', 'gemini-embedding-001');
+    const r = rankear(docs, qv, 'gemini-embedding-001');
+    assert.deepEqual(r.map((x) => x.s.id), ['a']);
+    const t0 = trechoDe(docs[0], r[0].ref, 'macarrão cítrico');
+    assert.equal(t0, null, 'sem palavra igual, só mostra trecho depois de refinar');
+    assert.equal(await refinarTrechos('x', 'gemini-embedding-001', qv, 'macarrão cítrico', r), true);
+    const t = trechoDe(docs[0], r[0].ref, 'macarrão cítrico');
+    assert.equal(t.onde, 'Na transcrição');
+    assert.match(t.texto, /limão siciliano/);
+    docs[0].resumo = 'mudou';
+    docs[0].atualizadoEm = 2;
+    assert.equal(precisaIndice(docs[0]), true, 'texto mudou: refaz o índice');
   } finally {
     globalThis.fetch = fetchOriginal;
   }

@@ -95,6 +95,8 @@ export function criarSalvo(uid, dados) {
 }
 
 export const atualizarSalvo = (uid, id, dados) => enviar(updateDoc(doc(salvosCol(uid), id), { ...dados, atualizadoEm: Date.now() }));
+// Índice da busca por assunto: não mexe em atualizadoEm e não avisa se o salvo já foi apagado.
+export const guardarIndice = (uid, id, indice) => { updateDoc(doc(salvosCol(uid), id), { indice }).catch(() => {}); };
 export const apagarSalvo = (uid, id) => { enviar(deleteDoc(doc(salvosCol(uid), id))); };
 export const restaurarSalvo = (uid, { id, ...dados }) => { enviar(setDoc(doc(salvosCol(uid), id), dados)); };
 
