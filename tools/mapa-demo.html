@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mapa (demo)</title>
+  <link rel="stylesheet" href="../css/app.css">
+  <style>body { padding: 16px; } .mapa { height: calc(100dvh - 32px); }</style>
+</head>
+<body>
+  <div class="mapa" id="palco"></div>
+  <script type="module">
+    // Prévia do mapa com dados falsos: tools/mapa-demo.html?tema=escuro&n=40
+    import { montarMapa } from '../js/mapa.js';
+    const qs = new URLSearchParams(location.search);
+    if (qs.get('tema')) document.documentElement.dataset.tema = qs.get('tema');
+    const cats = ['Receita', 'Lugar', 'Restaurante', 'Filmes e séries', 'Treino', 'Produto', 'Tecnologia', 'Música'];
+    const tags = ['rápido', 'viagem', 'barato', 'fim de semana', 'saudável', 'presente', 'casa'];
+    const titulos = ['Espaguete ao limão', 'Lisboa em 3 dias', 'Pizzaria do Zé', 'Série coreana nova', 'Treino de 20 min', 'Fone sem fio bom', 'Atalhos do VS Code', 'Playlist pra focar'];
+    let semente = 7;
+    const rnd = () => ((semente = (semente * 16807) % 2147483647) / 2147483647);
+    const capa = (i) => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60"><rect width="60" height="60" fill="hsl(${i * 47 % 360} 55% 55%)"/><circle cx="30" cy="30" r="14" fill="#fff8"/></svg>`)}`;
+    const n = Number(qs.get('n') || 40);
+    const pastas = ['Receitas', 'Viagens', 'Comprar', 'Ver depois', 'Estudos'].map((nome, i) => ({ id: `p${i}`, nome }));
+    const salvos = Array.from({ length: n }, (_, i) => {
+      const c = Math.floor(rnd() * cats.length);
+      return {
+        id: `s${i}`, titulo: `${titulos[c]} ${i + 1}`, categoria: cats[c], capa: capa(i),
+        pastas: rnd() < 0.6 ? [pastas[(c + (rnd() < 0.3 ? 1 : 0)) % pastas.length].id] : [],
+        tags: tags.filter(() => rnd() < 0.18),
+      };
+    });
+    const mapa = montarMapa(document.getElementById('palco'), { aoAbrirSalvo() {}, aoAbrirPasta() {} });
+    mapa.definir(salvos, pastas, { pastas: true, cats: true, tags: qs.has('tags') });
+    if (qs.get('q')) mapa.destacar(qs.get('q'));
+    window.mapa = mapa;
+  </script>
+</body>
+</html>

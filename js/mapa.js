@@ -3,13 +3,15 @@
 import * as THREE from '../vendor/three.module.min.js';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 import { normalizar } from './search.js';
+import { icone, iconeCategoria } from './icons.js';
 
 const CORES_CAT = {
   Receita: '#f59e0b', Lugar: '#10b981', Restaurante: '#ef4444', 'Filmes e séries': '#8b5cf6', Treino: '#14b8a6', Produto: '#ec4899',
   Dica: '#eab308', Música: '#6366f1', Livro: '#a16207', Moda: '#db2777', Beleza: '#f472b6', 'Casa e decoração': '#84cc16',
   Tecnologia: '#0ea5e9', Finanças: '#22c55e', Humor: '#f97316', 'Carreira e estudos': '#3b82f6', Outro: '#9ca3af',
 };
-const RAIO = { pasta: 1.7, cat: 1.15, tag: 0.6, salvo: 0.55 };
+// Lado do sprite de cada tipo, em unidades do mundo.
+const TAM = { pasta: 3.6, cat: 2.8, tag: 1.3, salvo: 1.4 };
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 // Guarda posições entre visitas: voltar de um salvo reabre o mapa do mesmo jeito.
 const posAntigas = new Map();
@@ -22,6 +24,69 @@ export function suportaWebGL() {
   } catch {
     return false;
   }
+}
+
+// Texturas desenhadas em canvas (nós planos, sempre de frente para a câmera).
+function criarTexturas() {
+  const cache = new Map();
+  const nova = (chave, desenhar) => {
+    if (cache.has(chave)) return cache.get(chave);
+    const c = document.createElement('canvas');
+    c.width = 128;
+    c.height = 128;
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    desenhar(c.getContext('2d'), () => { t.needsUpdate = true; });
+    cache.set(chave, t);
+    return t;
+  };
+  const comIcone = (ctx, nome, pronto, tam) => {
+    const svg = icone(nome).replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ').replaceAll('currentColor', '#fff');
+    const img = new Image();
+    img.onload = () => { ctx.drawImage(img, 64 - tam / 2, 64 - tam / 2, tam, tam); pronto(); };
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  };
+  const circulo = (ctx, r) => { ctx.beginPath(); ctx.arc(64, 64, r, 0, Math.PI * 2); };
+  return {
+    salvo: (cor, borda) => nova(`s${cor}${borda}`, (ctx) => {
+      circulo(ctx, 50);
+      ctx.fillStyle = cor;
+      ctx.fill();
+      ctx.lineWidth = 14;
+      ctx.strokeStyle = borda;
+      ctx.stroke();
+    }),
+    pasta: (cor) => nova(`p${cor}`, (ctx, pronto) => {
+      ctx.beginPath();
+      ctx.roundRect(8, 8, 112, 112, 32);
+      ctx.fillStyle = cor;
+      ctx.fill();
+      comIcone(ctx, 'pastas', pronto, 62);
+    }),
+    cat: (cor, nome) => nova(`c${cor}${nome}`, (ctx, pronto) => {
+      circulo(ctx, 60);
+      ctx.fillStyle = cor;
+      ctx.fill();
+      comIcone(ctx, iconeCategoria(nome), pronto, 58);
+    }),
+    tag: (cor, fundo) => nova(`t${cor}${fundo}`, (ctx) => {
+      circulo(ctx, 46);
+      ctx.fillStyle = fundo;
+      ctx.fill();
+      ctx.lineWidth = 16;
+      ctx.strokeStyle = cor;
+      ctx.stroke();
+    }),
+    halo: () => nova('halo', (ctx) => {
+      const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+      g.addColorStop(0, 'rgba(255,255,255,1)');
+      g.addColorStop(0.45, 'rgba(255,255,255,.45)');
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 128, 128);
+    }),
+    destruir: () => cache.forEach((t) => t.dispose()),
+  };
 }
 
 function montarGrafo(salvos, pastas, ver) {
@@ -53,10 +118,14 @@ export function montarMapa(caixa, { aoAbrirSalvo, aoAbrirPasta }) {
   const dica = document.createElement('div');
   dica.className = 'mapa-dica';
   dica.hidden = true;
-  caixa.append(canvas, rotulos, dica);
+  const legenda = document.createElement('div');
+  legenda.className = 'mapa-legenda';
+  legenda.innerHTML = '<span data-k="salvo"><i class="lg-salvo"></i>Salvo</span><span data-k="pastas"><i class="lg-pasta"></i>Pasta</span><span data-k="cats"><i class="lg-cat"></i>Categoria</span><span data-k="tags"><i class="lg-tag"></i>Tag</span>';
+  caixa.append(canvas, rotulos, dica, legenda);
 
   const cena = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
+  cena.fog = new THREE.Fog(0xffffff, 40, 160);
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 2000);
   camera.position.set(0, 18, 70);
   const controles = new OrbitControls(camera, canvas);
   if (cameraAntiga) {
@@ -66,19 +135,19 @@ export function montarMapa(caixa, { aoAbrirSalvo, aoAbrirPasta }) {
   controles.enableDamping = true;
   controles.dampingFactor = 0.08;
   controles.autoRotate = !reduzir && !cameraAntiga;
-  controles.autoRotateSpeed = 0.6;
+  controles.autoRotateSpeed = 0.5;
   controles.minDistance = 4;
   controles.maxDistance = 400;
-  cena.add(new THREE.HemisphereLight(0xffffff, 0x666677, 2.2));
-  const luz = new THREE.DirectionalLight(0xffffff, 1.2);
-  luz.position.set(30, 50, 40);
-  cena.add(luz);
+  // Depois que a pessoa mexe na câmera, o mapa não reenquadra sozinho.
+  let mexeu = !!cameraAntiga;
+  controles.addEventListener('start', () => { mexeu = true; });
 
-  const geos = Object.fromEntries(Object.entries(RAIO).map(([k, r]) => [k, new THREE.SphereGeometry(r, k === 'salvo' ? 16 : 24, k === 'salvo' ? 12 : 18)]));
+  const tex = criarTexturas();
+  const grupoHalos = new THREE.Group();
   const grupoNos = new THREE.Group();
-  cena.add(grupoNos);
+  cena.add(grupoHalos, grupoNos);
   const linhasGeo = new THREE.BufferGeometry();
-  const linhasMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.35 });
+  const linhasMat = new THREE.LineBasicMaterial({ vertexColors: true });
   const linhas = new THREE.LineSegments(linhasGeo, linhasMat);
   cena.add(linhas);
 
@@ -91,49 +160,81 @@ export function montarMapa(caixa, { aoAbrirSalvo, aoAbrirPasta }) {
   let hover = null;
   let raf = 0;
   let enquadrado = false;
+  let reenquadrado = false;
 
-  let opacidadeLinhas = 0.35;
+  let fundo = new THREE.Color('#fff');
+  let fundoHex = '#ffffff';
+  let escuro = false;
   function aplicarTema() {
-    const fundo = new THREE.Color(css('--card') || '#000');
-    const escuro = fundo.getHSL({}).l < 0.5;
+    fundo = new THREE.Color(css('--card') || '#fff');
+    fundoHex = `#${fundo.getHexString()}`;
+    escuro = fundo.getHSL({}).l < 0.5;
     cena.background = fundo;
-    linhasMat.color = new THREE.Color(escuro ? '#8e8e93' : '#9a9aa0');
-    opacidadeLinhas = escuro ? 0.4 : 0.5;
+    cena.fog.color = fundo;
+    for (const n of nos) {
+      n.mat.map = texturaDo(n);
+      n.mat.needsUpdate = true;
+    }
     aplicarDestaque();
   }
 
   function corDo(n) {
     if (n.tipo === 'pasta') return css('--azul') || '#208aef';
-    if (n.tipo === 'tag') return '#8e8e93';
+    if (n.tipo === 'tag') return escuro ? '#98989f' : '#8e8e93';
     return n.cor;
+  }
+
+  function texturaDo(n) {
+    if (n.tipo === 'pasta') return tex.pasta(corDo(n));
+    if (n.tipo === 'cat') return tex.cat(n.cor, n.rotulo);
+    if (n.tipo === 'tag') return tex.tag(corDo(n), fundoHex);
+    return tex.salvo(n.cor, fundoHex);
   }
 
   function definir(salvos, pastas, ver) {
     for (const n of nos) posAntigas.set(n.id, n.p.clone());
+    for (const n of nos) n.mat.dispose();
+    for (const h of grupoHalos.children) h.material.dispose();
     grupoNos.clear();
+    grupoHalos.clear();
     rotulos.replaceChildren();
+    for (const item of legenda.children) item.hidden = item.dataset.k !== 'salvo' && !ver[item.dataset.k];
     ({ nos, arestas } = montarGrafo(salvos, pastas, ver));
     porId = new Map(nos.map((n) => [n.id, n]));
     vizinhos = new Map(nos.map((n) => [n.id, new Set()]));
     for (const [a, b] of arestas) { vizinhos.get(a).add(b); vizinhos.get(b).add(a); }
-    const r = 10 + Math.cbrt(nos.length) * 8;
+    const r = 8 + Math.cbrt(nos.length) * 6;
     for (const n of nos) {
       n.p = posAntigas.get(n.id)?.clone() || new THREE.Vector3((Math.random() - 0.5) * r, (Math.random() - 0.5) * r, (Math.random() - 0.5) * r);
       n.v = new THREE.Vector3();
-      const escala = n.tipo === 'salvo' ? 1 : 1 + Math.min(n.grau, 30) * 0.03;
-      n.mat = new THREE.MeshStandardMaterial({ color: corDo(n), roughness: 0.55, metalness: 0.05, transparent: true });
-      n.mesh = new THREE.Mesh(geos[n.tipo], n.mat);
-      n.mesh.scale.setScalar(escala);
+      n.escala = n.tipo === 'salvo' || n.tipo === 'tag' ? 1 : 1 + Math.min(n.grau, 30) * 0.035;
+      n.mat = new THREE.SpriteMaterial({ map: texturaDo(n), transparent: true, depthTest: false, depthWrite: false });
+      n.mesh = new THREE.Sprite(n.mat);
+      n.mesh.scale.setScalar(TAM[n.tipo] * n.escala);
       n.mesh.userData.id = n.id;
       grupoNos.add(n.mesh);
+      n.halo = null;
       n.el = document.createElement('span');
       n.el.className = `mapa-rotulo ${n.tipo}`;
       n.el.title = n.rotulo;
-      n.el.textContent = n.rotulo.length > 40 ? `${n.rotulo.slice(0, 40)}…` : n.rotulo;
+      if (n.tipo === 'salvo' && n.salvo.capa) {
+        const img = document.createElement('img');
+        img.src = n.salvo.capa;
+        img.alt = '';
+        img.referrerPolicy = 'no-referrer';
+        img.onerror = () => img.remove();
+        n.el.append(img);
+      }
+      const limite = n.tipo === 'salvo' ? 34 : 40;
+      n.el.append(n.rotulo.length > limite ? `${n.rotulo.slice(0, limite)}…` : n.rotulo);
+      if (n.tipo === 'pasta' || n.tipo === 'cat') n.el.dataset.n = String(n.grau);
       rotulos.append(n.el);
     }
+    for (const n of nos) n.tam = [n.el.offsetWidth, n.el.offsetHeight];
     linhasGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(arestas.length * 6), 3));
+    linhasGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(arestas.length * 6), 3));
     calor = nos.every((n) => posAntigas.has(n.id)) ? 0.05 : posAntigas.size ? 0.5 : 1;
+    if (!mexeu) { enquadrado = false; reenquadrado = false; }
     aplicarDestaque();
   }
 
@@ -147,7 +248,7 @@ export function montarMapa(caixa, { aoAbrirSalvo, aoAbrirPasta }) {
         const b = nos[j];
         d.subVectors(a.p, b.p);
         const dist2 = Math.max(d.lengthSq(), 0.5);
-        const f = (a.tipo === 'salvo' && b.tipo === 'salvo' ? 22 : 60) / dist2;
+        const f = (a.tipo === 'salvo' && b.tipo === 'salvo' ? 16 : 50) / dist2;
         d.normalize().multiplyScalar(f * calor);
         a.v.add(d);
         b.v.sub(d);
@@ -157,33 +258,54 @@ export function montarMapa(caixa, { aoAbrirSalvo, aoAbrirPasta }) {
       const a = porId.get(ia);
       const b = porId.get(ib);
       d.subVectors(b.p, a.p);
-      const alvo = b.tipo === 'pasta' || a.tipo === 'pasta' ? 7 : 9;
+      const alvo = b.tipo === 'tag' ? 5 : b.tipo === 'pasta' ? 6.5 : 7;
       const f = (d.length() - alvo) * 0.035 * calor;
       d.normalize().multiplyScalar(f);
       a.v.add(d);
       b.v.sub(d);
     }
     for (const no of nos) {
-      no.v.addScaledVector(no.p, -0.02 * calor);
+      no.v.addScaledVector(no.p, -0.03 * calor);
       no.v.multiplyScalar(0.82);
       no.p.add(no.v);
     }
     calor = Math.max(calor * 0.992, 0.02);
   }
 
+  const cor = new THREE.Color();
   function aplicarDestaque() {
     const q = normalizar(destaque).trim();
     const viz = hover ? vizinhos.get(hover.id) : null;
     for (const n of nos) {
       const bate = q && normalizar(`${n.rotulo} ${n.salvo?.resumo || ''} ${n.salvo?.categoria || ''} ${(n.salvo?.tags || []).join(' ')} ${n.salvo?.nota || ''}`).includes(q);
       const ativo = hover ? n === hover || viz.has(n.id) : q ? bate : true;
-      n.mat.opacity = ativo ? 1 : 0.12;
-      n.mat.emissive = new THREE.Color(bate || n === hover ? corDo(n) : '#000');
-      n.mat.emissiveIntensity = bate || n === hover ? 0.5 : 0;
+      n.mat.opacity = ativo ? 1 : 0.14;
       n.ativo = ativo;
       n.bate = bate;
+      const brilha = bate || n === hover;
+      if (brilha && !n.halo) {
+        n.halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex.halo(), transparent: true, depthTest: false, depthWrite: false, opacity: 0.5 }));
+        n.halo.renderOrder = -1;
+        n.halo.position.copy(n.p);
+        grupoHalos.add(n.halo);
+      }
+      if (n.halo) {
+        n.halo.visible = brilha;
+        n.halo.material.color.set(corDo(n));
+        n.halo.scale.setScalar(TAM[n.tipo] * n.escala * 2.6);
+      }
     }
-    linhasMat.opacity = hover || q ? opacidadeLinhas * 0.35 : opacidadeLinhas;
+    const filtrando = hover || q;
+    const cores = linhasGeo.getAttribute('color');
+    if (!cores) return;
+    arestas.forEach(([ia, ib], i) => {
+      const a = porId.get(ia);
+      const b = porId.get(ib);
+      const acesa = filtrando && a.ativo && b.ativo;
+      cor.set(corDo(b)).lerp(fundo, acesa ? 0.1 : filtrando ? 0.9 : 0.35);
+      cores.array.set([cor.r, cor.g, cor.b, cor.r, cor.g, cor.b], i * 6);
+    });
+    cores.needsUpdate = true;
   }
 
   function atualizarLinhas() {
@@ -199,33 +321,65 @@ export function montarMapa(caixa, { aoAbrirSalvo, aoAbrirPasta }) {
   }
 
   const v = new THREE.Vector3();
+  const PRIORIDADE = { pasta: 3, cat: 2, tag: 1, salvo: 0 };
+  const esconder = (n) => { if (n.el.style.display !== 'none') n.el.style.display = 'none'; };
+  // Rótulos: mais importantes e mais perto primeiro; quem cairia em cima de outro fica escondido.
   function atualizarRotulos() {
     const w = caixa.clientWidth;
     const h = caixa.clientHeight;
-    let salvosVisiveis = 0;
+    const escalaTela = h / (Math.tan((camera.fov * Math.PI) / 360) * 2);
+    const candidatos = [];
+    const ocupados = [];
     for (const n of nos) {
       v.copy(n.p).project(camera);
-      const dist = camera.position.distanceTo(n.p);
-      const naFrente = v.z < 1;
-      let mostrar = naFrente && n.ativo !== false;
-      if (n.tipo === 'salvo') mostrar = mostrar && (n === hover || n.bate || ((dist < 28 || nos.length < 40) && salvosVisiveis++ < 60));
-      if (n.tipo === 'tag') mostrar = mostrar && (n === hover || dist < 45);
-      n.el.style.display = mostrar ? '' : 'none';
-      if (!mostrar) continue;
-      const raioTela = (RAIO[n.tipo] * n.mesh.scale.x * h) / (dist * Math.tan((camera.fov * Math.PI) / 360) * 2);
-      n.el.style.transform = `translate(${((v.x + 1) / 2) * w}px, ${((1 - v.y) / 2) * h}px) translate(-50%, ${Math.round(raioTela + 4)}px)`;
-      n.el.style.opacity = String(Math.max(0.25, Math.min(1, 1.6 - dist / 120)));
+      if (v.z >= 1 || n.ativo === false) { esconder(n); continue; }
+      n.tx = ((v.x + 1) / 2) * w;
+      n.ty = ((1 - v.y) / 2) * h;
+      n.dist = camera.position.distanceTo(n.p);
+      n.raio = ((TAM[n.tipo] / 2) * n.escala * escalaTela) / n.dist;
+      n.prio = n === hover ? 20 : (n.bate ? 10 : 0) + PRIORIDADE[n.tipo];
+      if (n.tipo !== 'salvo') ocupados.push([n.tx - n.raio, n.ty - n.raio, n.tx + n.raio, n.ty + n.raio]);
+      candidatos.push(n);
+    }
+    candidatos.sort((a, b) => b.prio - a.prio || a.dist - b.dist);
+    let salvos = 0;
+    for (const n of candidatos) {
+      const livre = n === hover || n.bate;
+      if (n.tipo === 'salvo' && !livre && salvos >= 30) { esconder(n); continue; }
+      if (!n.tam?.[0]) {
+        n.el.style.display = '';
+        n.tam = [n.el.offsetWidth, n.el.offsetHeight];
+      }
+      const [lw, lh] = n.tam;
+      const x0 = n.tipo === 'salvo' ? n.tx + n.raio + 6 : n.tx - lw / 2;
+      const y0 = n.tipo === 'salvo' ? n.ty - lh / 2 : n.ty + n.raio + 4;
+      const r = [x0 - 3, y0 - 2, x0 + lw + 3, y0 + lh + 2];
+      const fora = r[0] < 0 || r[2] > w || r[1] < 0 || r[3] > h;
+      if (n !== hover && (fora || ocupados.some((o) => r[0] < o[2] && r[2] > o[0] && r[1] < o[3] && r[3] > o[1]))) { esconder(n); continue; }
+      ocupados.push(r);
+      if (n.tipo === 'salvo') salvos += 1;
+      n.el.style.display = '';
+      n.el.style.transform = `translate(${Math.round(x0)}px, ${Math.round(y0)}px)`;
+      n.el.style.opacity = String(Math.max(0.35, Math.min(1, 1.7 - n.dist / 110)));
     }
   }
 
   function quadro() {
     raf = requestAnimationFrame(quadro);
     if (calor > 0.021) for (let i = 0; i < (nos.length > 400 ? 1 : 2); i += 1) passo();
-    // Primeira montagem: quando o layout quase assenta, enquadra tudo na tela.
-    if (!enquadrado && calor < 0.15) { enquadrado = true; if (!cameraAntiga) centralizar(); }
-    for (const n of nos) n.mesh.position.copy(n.p);
+    // Primeira montagem: enquadra quando o layout quase assenta e de novo quando para de vez.
+    if (!enquadrado && calor < 0.15) { enquadrado = true; if (!mexeu) centralizar(); }
+    if (!reenquadrado && calor < 0.03) { reenquadrado = true; if (!mexeu) centralizar(); }
+    for (const n of nos) {
+      n.mesh.position.copy(n.p);
+      n.halo?.position.copy(n.p);
+    }
     atualizarLinhas();
     controles.update();
+    // Névoa acompanha o zoom: o que está atrás do centro vai sumindo no fundo.
+    const d = camera.position.distanceTo(controles.target);
+    cena.fog.near = d * 0.75;
+    cena.fog.far = d * 2.4;
     renderer.render(cena, camera);
     atualizarRotulos();
   }
@@ -310,10 +464,10 @@ export function montarMapa(caixa, { aoAbrirSalvo, aoAbrirPasta }) {
     const caixa3 = new THREE.Box3();
     for (const n of nos) caixa3.expandByPoint(n.p);
     const centro = caixa3.getCenter(new THREE.Vector3());
-    const raio = Math.max(caixa3.getSize(new THREE.Vector3()).length() / 2, 8);
+    const raio = Math.max(...nos.map((n) => n.p.distanceTo(centro) + (TAM[n.tipo] * n.escala) / 2), 6);
     const fovV = (camera.fov * Math.PI) / 180;
     const fovH = 2 * Math.atan(Math.tan(fovV / 2) * camera.aspect);
-    focar({ p: centro }, (raio / Math.sin(Math.min(fovV, fovH) / 2)) * 0.85);
+    focar({ p: centro }, raio / Math.sin(Math.min(fovV, fovH) / 2));
   }
 
   function redimensionar() {
@@ -350,7 +504,8 @@ export function montarMapa(caixa, { aoAbrirSalvo, aoAbrirPasta }) {
       temaSistema.removeEventListener('change', aplicarTema);
       controles.dispose();
       for (const n of nos) n.mat.dispose();
-      Object.values(geos).forEach((g) => g.dispose());
+      for (const h of grupoHalos.children) h.material.dispose();
+      tex.destruir();
       linhasGeo.dispose();
       linhasMat.dispose();
       renderer.dispose();
